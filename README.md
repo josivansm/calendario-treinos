@@ -12,6 +12,13 @@ Site estático (HTML, CSS e JavaScript puro), sem servidor e sem login — roda 
 - **Exportar imagem (PNG)** da semana, da próxima semana, do mês ou de um período livre, em formato
   lista (bom para celular) ou calendário (grade, bom para imprimir).
 - **Link da atleta**: gera um link somente leitura com o plano dentro do próprio link para ela abrir no celular.
+- **Biblioteca de treinos**: modelos prontos para arrastar até o calendário; qualquer treino pode virar modelo.
+- **Zonas por atleta**: pace de limiar (corrida), FTP (ciclismo), CSS (natação) e FC máxima. Cada treino mostra o
+  alvo da zona escolhida (pace, watts, bpm), inclusive no link da atleta e na imagem exportada.
+- **Como foi o treino**: marcar como feito, com tempo e distância realizados, esforço percebido (1–10) e comentário.
+  Treinos passados não feitos ficam destacados.
+- **Retorno da atleta**: pelo link, ela marca os treinos feitos (salvo no navegador dela) e toca em
+  *Enviar retorno ao treinador*. Ao abrir esse link de retorno, o treinador confere e aplica no calendário.
 - Backup e importação dos dados em `.json`.
 
 ## Onde ficam os dados

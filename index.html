@@ -28,6 +28,7 @@
         <summary class="btn ghost icon" title="Gerenciar atletas">⋯</summary>
         <div class="menu">
           <button type="button" data-act="athlete-new">+ Nova atleta</button>
+          <button type="button" data-act="athlete-zones">Zonas da atleta (pace, FTP, FC)</button>
           <button type="button" data-act="athlete-rename">Renomear atleta</button>
           <button type="button" data-act="athlete-delete" class="danger">Excluir atleta</button>
         </div>
@@ -49,7 +50,10 @@
 
   <div id="readonlyBanner" class="banner" hidden>
     <span>Plano de treino de <strong id="roName"></strong> · somente visualização</span>
-    <button type="button" class="btn small" id="btnSaveShared">Salvar no meu calendário</button>
+    <span class="banner-actions">
+      <button type="button" class="btn small ghost" id="btnRoZones">Minhas zonas</button>
+      <button type="button" class="btn small primary" id="btnSendFeedback">Enviar retorno ao treinador</button>
+    </span>
   </div>
 
   <nav class="monthbar">
@@ -116,6 +120,7 @@
             <select id="wZone"></select>
           </label>
         </div>
+        <p class="target-line" id="wTarget" hidden></p>
 
         <label>Estrutura do treino
           <textarea id="wDesc" rows="6" placeholder="Aquecimento: 10 min leve&#10;Principal: 6 x 400 m forte / 200 m trote&#10;Desaquecimento: 10 min leve"></textarea>
@@ -128,6 +133,24 @@
           <textarea id="wNotes" rows="2" placeholder="Dicas, hidratação, pace alvo, local..."></textarea>
         </label>
       </fieldset>
+      <fieldset id="resultBox" class="result-box">
+        <legend>Como foi?</legend>
+        <label class="check done-check"><input type="checkbox" id="fDone"> Treino realizado</label>
+        <div class="row">
+          <label>Tempo realizado
+            <input type="text" id="fDuration" placeholder="ex: 1:25" inputmode="numeric">
+          </label>
+          <label>Distância realizada <span id="fDistUnit" class="unit">km</span>
+            <input type="number" id="fDistance" min="0" step="0.1" placeholder="0">
+          </label>
+          <label>Esforço percebido
+            <select id="fRpe"></select>
+          </label>
+        </div>
+        <label>Comentário
+          <textarea id="fComment" rows="2" placeholder="Como se sentiu, dores, clima, o que mudou..."></textarea>
+        </label>
+      </fieldset>
       <div class="dlg-foot">
         <button type="button" class="btn danger-ghost edit-only" id="btnDelete">Excluir</button>
         <button type="button" class="btn ghost edit-only" id="btnDuplicate">Duplicar</button>
@@ -135,6 +158,7 @@
         <span class="spacer"></span>
         <button type="button" class="btn ghost" data-close>Fechar</button>
         <button type="submit" class="btn primary edit-only" id="btnSave">Salvar</button>
+        <button type="button" class="btn primary ro-only" id="btnSaveResult">Salvar</button>
       </div>
     </form>
   </dialog>
@@ -175,15 +199,67 @@
   <!-- Link -->
   <dialog id="shareDialog" class="dialog">
     <div class="dlg-head">
-      <h2>Link para a atleta</h2>
+      <h2 id="shareTitle">Link para a atleta</h2>
       <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
     </div>
-    <p class="muted">Envie este link para a atleta ver o calendário no celular ou computador. O link leva uma cópia do plano <b>de agora</b>: se você mudar os treinos, gere e envie um link novo.</p>
+    <p class="muted" id="shareText"></p>
     <textarea id="shareLink" rows="4" readonly></textarea>
     <div class="dlg-foot">
       <span class="spacer"></span>
       <a class="btn ghost" id="btnWhats" target="_blank" rel="noopener">Enviar no WhatsApp</a>
       <button type="button" class="btn primary" id="btnCopyLink">Copiar link</button>
+    </div>
+  </dialog>
+
+  <!-- Zonas -->
+  <dialog id="zonesDialog" class="dialog wide">
+    <div class="dlg-head">
+      <h2>Zonas de <span id="zonesName"></span></h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <fieldset id="zFields">
+      <p class="muted edit-only">Preencha o que souber; as faixas de cada zona são calculadas na hora e aparecem nos treinos, no link da atleta e na imagem exportada.</p>
+      <div class="row">
+        <label>Corrida · pace de limiar <span class="unit">(min/km)</span>
+          <input type="text" id="zRun" placeholder="ex: 5:00">
+        </label>
+        <label>Ciclismo · FTP <span class="unit">(watts)</span>
+          <input type="number" id="zFtp" min="50" max="600" placeholder="ex: 180">
+        </label>
+        <label>Natação · CSS <span class="unit">(min/100 m)</span>
+          <input type="text" id="zCss" placeholder="ex: 2:00">
+        </label>
+        <label>FC máxima <span class="unit">(bpm)</span>
+          <input type="number" id="zHr" min="120" max="230" placeholder="ex: 185">
+        </label>
+      </div>
+      <div class="zones-wrap"><table class="zones-table" id="zonesTable"></table></div>
+      <p class="muted small">Faixas de referência: corrida em % do pace de limiar, ciclismo em % do FTP (Coggan), natação em segundos a partir do CSS e FC em % da máxima.</p>
+    </fieldset>
+    <div class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" data-close>Fechar</button>
+      <button type="button" class="btn primary edit-only" id="btnZonesSave">Salvar zonas</button>
+    </div>
+  </dialog>
+
+  <!-- Retorno recebido -->
+  <dialog id="feedbackDialog" class="dialog">
+    <div class="dlg-head">
+      <h2>Retorno de <span id="fbName"></span></h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <div class="fb-body">
+      <p class="muted">Este link traz o que a atleta marcou em <b id="fbCount"></b>. Confira e aplique no calendário.</p>
+      <label>Aplicar no calendário de
+        <select id="fbAthlete"></select>
+      </label>
+      <ul class="fb-list" id="fbList"></ul>
+    </div>
+    <div class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" data-close>Agora não</button>
+      <button type="button" class="btn primary" id="btnFbApply">Aplicar retorno</button>
     </div>
   </dialog>
 

@@ -30,6 +30,7 @@ const MONTHS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Jul
 const MON_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const STORE_KEY = 'calendario-treinos:v1';
 const SHARE_PREFIX = '#plano=';
+const FEEDBACK_PREFIX = '#retorno=';
 
 /* ================= Utilidades ================= */
 const $ = (s, r = document) => r.querySelector(s);
@@ -158,7 +159,84 @@ function sanitizeWorkout(w) {
     desc: String(w.desc || ''),
     notes: String(w.notes || ''),
     order: +w.order || 0,
+    result: sanitizeResult(w.result),
   };
+}
+// Como foi o treino (preenchido pela atleta ou pelo treinador)
+function sanitizeResult(r) {
+  if (!r || typeof r !== 'object') return null;
+  const out = {
+    done: !!r.done,
+    duration: Math.max(0, Math.round(+r.duration || 0)),
+    distance: Math.max(0, +r.distance || 0),
+    rpe: Math.min(10, Math.max(0, Math.round(+r.rpe || 0))),
+    comment: String(r.comment || '').slice(0, 1000),
+  };
+  return out.done || out.duration || out.distance || out.rpe || out.comment ? out : null;
+}
+
+/* ================= Zonas ================= */
+const RPE = ['', '1 · Muito leve', '2 · Leve', '3 · Moderado', '4 · Um pouco forte', '5 · Forte', '6 · Forte+', '7 · Muito forte', '8 · Muito forte+', '9 · Quase máximo', '10 · Máximo'];
+const ZONE_RULES = {
+  // pace de corrida: multiplicador do pace de limiar (s/km) — maior = mais lento
+  run: { Z1: [1.29, null], Z2: [1.14, 1.29], Z3: [1.06, 1.13], Z4: [0.99, 1.05], Z5: [null, 0.99] },
+  // potência no ciclismo: % do FTP
+  bike: { Z1: [null, 0.55], Z2: [0.56, 0.75], Z3: [0.76, 0.90], Z4: [0.91, 1.05], Z5: [1.06, 1.20] },
+  // natação: segundos somados ao CSS (s/100 m) — maior = mais lento
+  swim: { Z1: [15, null], Z2: [8, 15], Z3: [3, 8], Z4: [-2, 3], Z5: [null, -2] },
+  // frequência cardíaca: % da FC máxima
+  hr: { Z1: [0.50, 0.60], Z2: [0.60, 0.70], Z3: [0.70, 0.80], Z4: [0.80, 0.90], Z5: [0.90, 1.00] },
+};
+function parsePace(str) {
+  const m = String(str || '').trim().match(/^(\d{1,2})[:'.,](\d{2})$/);
+  if (m) return +m[1] * 60 + +m[2];
+  return /^\d{1,2}$/.test(String(str || '').trim()) ? +str * 60 : 0;
+}
+const fmtPace = s => `${Math.floor(Math.round(s) / 60)}:${pad(Math.round(s) % 60)}`;
+function sanitizeZones(z) {
+  z = z || {};
+  const n = (v, lo, hi) => (+v >= lo && +v <= hi ? Math.round(+v) : 0);
+  return { runPace: n(z.runPace, 120, 900), ftp: n(z.ftp, 50, 600), cssPace: n(z.cssPace, 50, 300), hrMax: n(z.hrMax, 120, 230) };
+}
+function rangeText(lo, hi, fmt, unit, slowerIsBigger) {
+  if (lo != null && hi != null) return `${fmt(lo)}–${fmt(hi)} ${unit}`;
+  if (slowerIsBigger) return lo != null ? `acima de ${fmt(lo)} ${unit}` : `abaixo de ${fmt(hi)} ${unit}`;
+  return lo != null ? `acima de ${fmt(lo)} ${unit}` : `até ${fmt(hi)} ${unit}`;
+}
+// Retorna os alvos da zona para a modalidade: ['4:50–5:10 /km', '152–171 bpm']
+function zoneTargets(zones, sport, zone) {
+  if (!zone || !zones) return [];
+  const out = [];
+  const r = ZONE_RULES[sport][zone];
+  if (sport === 'run' && zones.runPace) {
+    const T = zones.runPace;
+    out.push(rangeText(r[0] != null ? T * r[0] : null, r[1] != null ? T * r[1] : null, fmtPace, '/km', true)
+      .replace('acima de', 'mais lento que').replace('abaixo de', 'mais rápido que'));
+  }
+  if (sport === 'bike' && zones.ftp) {
+    out.push(rangeText(r[0] != null ? zones.ftp * r[0] : null, r[1] != null ? zones.ftp * r[1] : null, v => Math.round(v), 'W'));
+  }
+  if (sport === 'swim' && zones.cssPace) {
+    const C = zones.cssPace;
+    out.push(rangeText(r[0] != null ? C + r[0] : null, r[1] != null ? C + r[1] : null, fmtPace, '/100 m', true)
+      .replace('acima de', 'mais lento que').replace('abaixo de', 'mais rápido que'));
+  }
+  if (zones.hrMax) {
+    const h = ZONE_RULES.hr[zone];
+    out.push(`${Math.round(zones.hrMax * h[0])}–${Math.round(zones.hrMax * h[1])} bpm`);
+  }
+  return out;
+}
+const targetsFor = w => zoneTargets(athlete().zones, w.sport, w.zone);
+
+/* ================= Retorno da atleta (fica no navegador dela) ================= */
+const FEEDBACK_KEY = 'calendario-treinos:retorno';
+function loadFeedback() {
+  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY)) || {}; } catch (e) { return {}; }
+}
+function saveFeedback(map) {
+  try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(map)); return true; }
+  catch (e) { toast('Não foi possível salvar neste navegador'); return false; }
 }
 function groupByDate(list) {
   const g = {};
@@ -181,27 +259,59 @@ function unb64url(str) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
-async function encodePlan(a) {
-  const compact = { n: a.name, w: a.workouts.map(w => [w.date, w.sport, w.title, w.duration, w.distance, w.zone, w.desc, w.notes, w.order]) };
-  const bytes = new TextEncoder().encode(JSON.stringify(compact));
-  if ('CompressionStream' in window) {
-    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-    return 'z' + b64url(new Uint8Array(await new Response(stream).arrayBuffer()));
+const packResult = r => (r ? [r.done ? 1 : 0, r.duration, r.distance, r.rpe, r.comment] : 0);
+const unpackResult = r => (Array.isArray(r) ? { done: !!r[0], duration: r[1], distance: r[2], rpe: r[3], comment: r[4] } : null);
+
+async function packJSON(obj) {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  if ("CompressionStream" in window) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream("deflate-raw"));
+    return "z" + b64url(new Uint8Array(await new Response(stream).arrayBuffer()));
   }
-  return 'j' + b64url(bytes);
+  return "j" + b64url(bytes);
+}
+async function unpackJSON(str) {
+  const kind = str[0], bytes = unb64url(str.slice(1));
+  if (kind === "z") {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return JSON.parse(await new Response(stream).text());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// Link da atleta: plano completo (com ids, para o retorno voltar ao treino certo)
+function encodePlan(a) {
+  return packJSON({
+    n: a.name,
+    z: a.zones || null,
+    w: a.workouts.map(w => [w.date, w.sport, w.title, w.duration, w.distance, w.zone, w.desc, w.notes, w.order, w.id, packResult(w.result)]),
+  });
 }
 async function decodePlan(str) {
-  const kind = str[0], bytes = unb64url(str.slice(1));
-  let text;
-  if (kind === 'z') {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    text = await new Response(stream).text();
-  } else text = new TextDecoder().decode(bytes);
-  const c = JSON.parse(text);
+  const c = await unpackJSON(str);
   return {
-    id: 'compartilhado',
-    name: String(c.n || 'Atleta'),
-    workouts: (c.w || []).map(r => sanitizeWorkout({ date: r[0], sport: r[1], title: r[2], duration: r[3], distance: r[4], zone: r[5], desc: r[6], notes: r[7], order: r[8] })),
+    id: "compartilhado",
+    name: String(c.n || "Atleta"),
+    zones: sanitizeZones(c.z),
+    workouts: (c.w || []).map(r => sanitizeWorkout({
+      date: r[0], sport: r[1], title: r[2], duration: r[3], distance: r[4], zone: r[5], desc: r[6], notes: r[7], order: r[8],
+      id: r[9] ? String(r[9]) : undefined, result: unpackResult(r[10]),
+    })),
+  };
+}
+
+// Link de retorno: só o que a atleta marcou (feito, tempo, distância, esforço, comentário)
+function encodeFeedback(name, workouts) {
+  return packJSON({
+    n: name,
+    f: workouts.filter(w => w.result).map(w => [w.id, w.date, w.title || SPORTS[w.sport].label, packResult(w.result)]),
+  });
+}
+async function decodeFeedback(str) {
+  const c = await unpackJSON(str);
+  return {
+    name: String(c.n || "Atleta"),
+    items: (c.f || []).map(r => ({ id: String(r[0]), date: String(r[1]), title: String(r[2] || ""), result: sanitizeResult(unpackResult(r[3])) })),
   };
 }
 
@@ -243,7 +353,26 @@ function workoutCard(w, opts = {}) {
   if (w.distance) meta.append(el('span', null, fmtDistance(w.sport, w.distance)));
   if (w.zone) meta.append(el('span', `zone ${w.zone}`, w.zone));
   if (meta.childNodes.length) c.append(meta);
+  if (!opts.template) {
+    const tg = targetsFor(w);
+    if (tg.length) c.append(el('div', 'wk-target', `Alvo: ${tg.join(' · ')}`));
+  }
   if (w.desc) c.append(el('div', 'wk-desc', w.desc));
+
+  if (!opts.template) {
+    const r = w.result;
+    if (r && r.done) {
+      c.classList.add('done');
+      const parts = ['✓ Feito'];
+      if (r.duration) parts.push(fmtDuration(r.duration));
+      if (r.distance) parts.push(fmtDistance(w.sport, r.distance));
+      if (r.rpe) parts.push(`esforço ${r.rpe}/10`);
+      c.append(el('div', 'wk-result', parts.join(' · ')));
+    } else if (w.date < iso(new Date())) {
+      c.classList.add('missed');
+    }
+    if (r && r.comment) c.append(el('div', 'wk-comment', `“${r.comment}”`));
+  }
 
   const open = opts.template ? () => openWorkout(null, defaultUseDate(), w) : () => openWorkout(w.id);
   c.addEventListener('click', open);
@@ -287,6 +416,13 @@ function weekSummary(weekStart, list) {
       r.append(icon(k), el('span', null, SPORTS[k].label), el('span', null, sportSummaryText(k, s)));
       box.append(r);
     });
+    const done = list.filter(w => w.result && w.result.done);
+    if (done.length) {
+      const doneMin = done.reduce((s, w) => s + (w.result.duration || w.duration), 0);
+      const r = el('div', 'sum-done');
+      r.textContent = `✓ ${done.length} de ${t.count} feitos${doneMin ? ` · ${fmtDuration(doneMin)}` : ''}`;
+      box.append(r);
+    }
   }
   if (!readOnly) {
     const act = el('div', 'sum-actions');
@@ -306,7 +442,7 @@ function weekSummary(weekStart, list) {
       ps.onclick = () => {
         weekClipboard.forEach(w => {
           const date = iso(addDays(weekStart, w.offset));
-          athlete().workouts.push(sanitizeWorkout({ ...w, id: uid(), date, order: nextOrder(date) }));
+          athlete().workouts.push(sanitizeWorkout({ ...w, id: uid(), date, order: nextOrder(date), result: null }));
         });
         saveDB(); renderCalendar();
         toast('Semana colada');
@@ -439,7 +575,7 @@ function moveWorkout(id, date, copy) {
   const w = athlete().workouts.find(x => x.id === id);
   if (!w) return;
   if (copy) {
-    athlete().workouts.push({ ...w, id: uid(), date, order: nextOrder(date) });
+    athlete().workouts.push({ ...w, id: uid(), date, order: nextOrder(date), result: null });
     toast('Treino copiado');
   } else {
     if (w.date === date) return;
@@ -458,9 +594,49 @@ function setSport(k) {
   $$('#sportPick button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sport === k)));
   $('#wDistUnit').textContent = SPORTS[k].unit;
   $('#wDistance').step = SPORTS[k].step;
+  $('#fDistUnit').textContent = SPORTS[k].unit;
+  $('#fDistance').step = SPORTS[k].step;
+  updateTargetLine();
+}
+
+function updateTargetLine() {
+  const line = $('#wTarget');
+  const zone = $('#wZone').value;
+  const zones = athlete().zones;
+  const tg = zoneTargets(zones, currentSport, zone);
+  line.innerHTML = '';
+  if (tg.length) {
+    line.append(el('b', null, `Alvo ${zone}: `), tg.join(' · '));
+  } else if (zone && !readOnly) {
+    line.append('Cadastre as zonas da atleta (menu ⋯ ao lado do nome) para ver pace, potência e FC alvo.');
+  }
+  line.hidden = !line.childNodes.length;
 }
 
 let dialogMode = 'workout'; // 'workout' | 'template'
+
+function fillResult(r) {
+  $('#fDone').checked = !!(r && r.done);
+  $('#fDuration').value = r && r.duration ? durInput(r.duration) : '';
+  $('#fDistance').value = r && r.distance ? r.distance : '';
+  $('#fRpe').value = r && r.rpe ? String(r.rpe) : '';
+  $('#fComment').value = r ? r.comment : '';
+}
+function readResult() {
+  const duration = parseDuration($('#fDuration').value);
+  if (Number.isNaN(duration)) {
+    toast('Tempo realizado inválido. Use 1:30, 90 ou 1h30.');
+    $('#fDuration').focus();
+    return undefined;
+  }
+  return sanitizeResult({
+    done: $('#fDone').checked,
+    duration,
+    distance: +$('#fDistance').value || 0,
+    rpe: +$('#fRpe').value || 0,
+    comment: $('#fComment').value.trim(),
+  });
+}
 
 function fillForm(src, date) {
   setSport(src ? src.sport : currentSport);
@@ -471,6 +647,7 @@ function fillForm(src, date) {
   $('#wZone').value = src ? src.zone : '';
   $('#wDesc').value = src ? src.desc : '';
   $('#wNotes').value = src ? src.notes : '';
+  updateTargetLine();
 }
 
 // id: treino existente · date: data para treino novo · prefill: modelo da biblioteca para preencher
@@ -480,6 +657,8 @@ function openWorkout(id, date, prefill) {
   editingId = w ? w.id : null;
   $('#wDialogTitle').textContent = readOnly ? 'Treino' : (w ? 'Editar treino' : prefill ? 'Usar modelo da biblioteca' : 'Novo treino');
   fillForm(w || prefill, w ? w.date : date);
+  fillResult(w ? w.result : null);
+  $('#resultBox').hidden = !w;
   $('#wDateLabel').hidden = false;
   $('#wFields').disabled = readOnly;
   $('#btnDelete').hidden = !w;
@@ -498,6 +677,7 @@ function openTemplate(id) {
   $('#wDialogTitle').textContent = t ? 'Editar modelo da biblioteca' : 'Novo modelo da biblioteca';
   fillForm(t, '');
   if (!t && libFilter !== 'all') setSport(libFilter);
+  $('#resultBox').hidden = true;
   $('#wDateLabel').hidden = true;
   $('#wFields').disabled = false;
   $('#btnDelete').hidden = !t;
@@ -558,6 +738,9 @@ function saveWorkout(e) {
   const list = athlete().workouts;
   if (editingId) {
     const w = list.find(x => x.id === editingId);
+    const result = readResult();
+    if (result === undefined) return;
+    data.result = result;
     if (w.date !== data.date) data.order = nextOrder(data.date);
     Object.assign(w, sanitizeWorkout({ ...w, ...data }));
   } else {
@@ -603,9 +786,121 @@ function exportCard(w, withDesc) {
   if (w.distance) m.append(el('span', null, fmtDistance(w.sport, w.distance)));
   if (w.zone) m.append(el('span', `zone ${w.zone}`, ZONES.find(z => z[0] === w.zone)[1]));
   if (m.childNodes.length) c.append(m);
+  const tg = targetsFor(w);
+  if (tg.length) c.append(el('div', 'tg', `Alvo: ${tg.join(' · ')}`));
   if (withDesc && w.desc) c.append(el('div', 's', w.desc));
   if (withDesc && w.notes) c.append(el('div', 'n', w.notes));
+  if (w.result && w.result.done) {
+    const r = w.result, parts = ['✓ Feito'];
+    if (r.duration) parts.push(fmtDuration(r.duration));
+    if (r.distance) parts.push(fmtDistance(w.sport, r.distance));
+    if (r.rpe) parts.push(`esforço ${r.rpe}/10`);
+    c.append(el('div', 'ok', parts.join(' · ')));
+  }
   return c;
+}
+
+/* ================= Diálogo de zonas ================= */
+function renderZonesTable() {
+  const z = sanitizeZones({
+    runPace: parsePace($('#zRun').value),
+    ftp: +$('#zFtp').value,
+    cssPace: parsePace($('#zCss').value),
+    hrMax: +$('#zHr').value,
+  });
+  const tbl = $('#zonesTable');
+  tbl.innerHTML = '';
+  const head = el('tr');
+  ['Zona', 'Corrida', 'Ciclismo', 'Natação', 'FC'].forEach(h => head.append(el('th', null, h)));
+  tbl.append(head);
+  ZONES.slice(1).forEach(([k, label]) => {
+    const tr = el('tr');
+    tr.append(el('td', null, label));
+    const run = z.runPace ? zoneTargets({ runPace: z.runPace }, 'run', k)[0] : '—';
+    const bike = z.ftp ? zoneTargets({ ftp: z.ftp }, 'bike', k)[0] : '—';
+    const swim = z.cssPace ? zoneTargets({ cssPace: z.cssPace }, 'swim', k)[0] : '—';
+    const hr = z.hrMax ? zoneTargets({ hrMax: z.hrMax }, 'run', k)[0] : '—';
+    [run, bike, swim, hr].forEach(v => tr.append(el('td', null, v)));
+    tbl.append(tr);
+  });
+  return z;
+}
+function openZones() {
+  const z = sanitizeZones(athlete().zones);
+  $('#zonesName').textContent = athlete().name;
+  $('#zRun').value = z.runPace ? fmtPace(z.runPace) : '';
+  $('#zFtp').value = z.ftp || '';
+  $('#zCss').value = z.cssPace ? fmtPace(z.cssPace) : '';
+  $('#zHr').value = z.hrMax || '';
+  $('#zFields').disabled = readOnly;
+  renderZonesTable();
+  $('#zonesDialog').showModal();
+}
+
+/* ================= Retorno: atleta → treinador ================= */
+async function sendFeedback() {
+  const a = athlete();
+  const withResult = a.workouts.filter(w => w.result);
+  if (!withResult.length) { toast('Marque pelo menos um treino como feito antes de enviar'); return; }
+  const code = await encodeFeedback(a.name, withResult);
+  const url = `${location.origin}${location.pathname}${FEEDBACK_PREFIX}${code}`;
+  openLinkDialog(
+    'Enviar retorno ao treinador',
+    `Este link leva o que você marcou em ${withResult.length} treino${withResult.length > 1 ? 's' : ''} (feito, tempo, distância, esforço e comentário). Envie para quem monta seus treinos.`,
+    url,
+    `Retorno dos meus treinos: ${url}`,
+  );
+}
+
+function openLinkDialog(title, text, url, whatsText) {
+  $('#shareTitle').textContent = title;
+  $('#shareText').textContent = text;
+  $('#shareLink').value = url;
+  $('#btnWhats').href = `https://wa.me/?text=${encodeURIComponent(whatsText)}`;
+  $('#shareDialog').showModal();
+}
+
+let pendingFeedback = null;
+function showIncomingFeedback(fb) {
+  pendingFeedback = fb;
+  $('#fbName').textContent = fb.name;
+  $('#fbCount').textContent = `${fb.items.length} treino${fb.items.length > 1 ? 's' : ''}`;
+  const sel = $('#fbAthlete');
+  sel.innerHTML = '';
+  // sugere a atleta que tem os treinos com esses ids (ou o mesmo nome)
+  const score = a => fb.items.filter(i => a.workouts.some(w => w.id === i.id)).length * 10 + (a.name === fb.name ? 1 : 0);
+  const best = [...db.athletes].sort((x, y) => score(y) - score(x))[0];
+  db.athletes.forEach(a => { const o = el('option', null, a.name); o.value = a.id; o.selected = a === best; sel.append(o); });
+  const list = $('#fbList');
+  list.innerHTML = '';
+  fb.items.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(i => {
+    const r = i.result || {};
+    const li = el('li');
+    const parts = [r.done ? '✓ feito' : 'não feito'];
+    if (r.duration) parts.push(fmtDuration(r.duration));
+    if (r.rpe) parts.push(`esforço ${r.rpe}/10`);
+    li.append(el('b', null, `${fmtDM(parseISO(i.date))} · ${i.title}`), ` — ${parts.join(' · ')}`);
+    if (r.comment) li.append(el('div', 'muted', `“${r.comment}”`));
+    list.append(li);
+  });
+  $('#feedbackDialog').showModal();
+}
+function applyFeedback() {
+  const fb = pendingFeedback;
+  const a = db.athletes.find(x => x.id === $('#fbAthlete').value);
+  if (!fb || !a) return;
+  let applied = 0;
+  fb.items.forEach(i => {
+    const w = a.workouts.find(x => x.id === i.id);
+    if (w) { w.result = i.result; applied++; }
+  });
+  db.currentId = a.id;
+  saveDB();
+  history.replaceState(null, '', location.pathname);
+  $('#feedbackDialog').close();
+  render();
+  const missing = fb.items.length - applied;
+  toast(missing ? `${applied} treino(s) atualizados · ${missing} não encontrados (foram excluídos ou são de outro plano)` : `Retorno aplicado em ${applied} treino(s)`);
 }
 
 function exportSummaryLine(list) {
@@ -798,6 +1093,7 @@ function bindEvents() {
         db.athletes = db.athletes.filter(x => x.id !== a.id);
         db.currentId = db.athletes[0].id; saveDB(); render();
         break;
+      case 'athlete-zones': openZones(); break;
       case 'backup': exportBackup(); break;
       case 'import': $('#importFile').click(); break;
     }
@@ -820,6 +1116,36 @@ function bindEvents() {
   });
   ZONES.forEach(([v, l]) => { const o = el('option', null, l); o.value = v; $('#wZone').append(o); });
   $('#workoutForm').addEventListener('submit', saveWorkout);
+  $('#wZone').addEventListener('change', updateTargetLine);
+  RPE.forEach((l, i) => { const o = el('option', null, l || '—'); o.value = i ? String(i) : ''; $('#fRpe').append(o); });
+  // Atleta (link somente leitura): salva o "como foi" no navegador dela
+  $('#btnSaveResult').onclick = () => {
+    const w = athlete().workouts.find(x => x.id === editingId);
+    if (!w) return;
+    const r = readResult();
+    if (r === undefined) return;
+    const fb = loadFeedback();
+    if (r) fb[w.id] = r; else delete fb[w.id];
+    if (!saveFeedback(fb)) return;
+    w.result = r;
+    $('#workoutDialog').close();
+    renderCalendar();
+    toast(r && r.done ? 'Treino marcado como feito ✓' : 'Salvo');
+  };
+  $('#btnSendFeedback').onclick = sendFeedback;
+  $('#btnRoZones').onclick = openZones;
+  $('#btnFbApply').onclick = applyFeedback;
+  $('#feedbackDialog').addEventListener('close', () => { if (location.hash.startsWith(FEEDBACK_PREFIX)) history.replaceState(null, '', location.pathname); });
+
+  // Zonas
+  ['#zRun', '#zFtp', '#zCss', '#zHr'].forEach(id => $(id).addEventListener('input', renderZonesTable));
+  $('#btnZonesSave').onclick = () => {
+    athlete().zones = renderZonesTable();
+    saveDB();
+    $('#zonesDialog').close();
+    renderCalendar();
+    toast('Zonas salvas');
+  };
   $('#btnStructure').onclick = () => {
     const t = $('#wDesc');
     const tpl = 'Aquecimento: \nPrincipal: \nDesaquecimento: ';
@@ -893,25 +1219,18 @@ function bindEvents() {
   $('#btnShare').onclick = async () => {
     const code = await encodePlan(athlete());
     const url = `${location.origin}${location.pathname}${SHARE_PREFIX}${code}`;
-    $('#shareLink').value = url;
-    $('#btnWhats').href = `https://wa.me/?text=${encodeURIComponent(`Seu plano de treino: ${url}`)}`;
-    $('#shareDialog').showModal();
+    openLinkDialog(
+      'Link para a atleta',
+      'Envie este link para a atleta ver o calendário no celular ou computador. Ela pode marcar os treinos feitos e te mandar o retorno. O link leva uma cópia do plano de agora: se você mudar os treinos, gere e envie um link novo.',
+      url,
+      `Seu plano de treino: ${url}`,
+    );
   };
   $('#btnCopyLink').onclick = async () => {
     try { await navigator.clipboard.writeText($('#shareLink').value); toast('Link copiado'); }
     catch (e) { $('#shareLink').select(); document.execCommand('copy'); toast('Link copiado'); }
   };
 
-  // Plano compartilhado → salvar
-  $('#btnSaveShared').onclick = () => {
-    const shared = athlete();
-    const mine = loadDB();
-    const a = { id: uid(), name: shared.name, workouts: shared.workouts.map(w => ({ ...w, id: uid() })) };
-    mine.athletes.push(a);
-    mine.currentId = a.id;
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(mine)); } catch (e) { toast('Não foi possível salvar'); return; }
-    location.href = location.pathname;
-  };
 }
 
 /* ================= Início ================= */
@@ -919,6 +1238,8 @@ async function init() {
   if (location.hash.startsWith(SHARE_PREFIX)) {
     try {
       const shared = await decodePlan(location.hash.slice(SHARE_PREFIX.length));
+      const fb = loadFeedback();
+      shared.workouts.forEach(w => { if (fb[w.id]) w.result = sanitizeResult(fb[w.id]); });
       db = { athletes: [shared], currentId: shared.id };
       readOnly = true;
       document.body.classList.add('readonly');
@@ -932,5 +1253,9 @@ async function init() {
   renderLegend($('#legend'));
   bindEvents();
   render();
+  if (!readOnly && location.hash.startsWith(FEEDBACK_PREFIX)) {
+    try { showIncomingFeedback(await decodeFeedback(location.hash.slice(FEEDBACK_PREFIX.length))); }
+    catch (e) { console.error(e); toast('Link de retorno inválido'); }
+  }
 }
 init();
