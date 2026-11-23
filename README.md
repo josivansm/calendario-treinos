@@ -21,7 +21,19 @@ Site estático (HTML, CSS e JavaScript puro), sem servidor e sem login — roda 
   *Enviar retorno ao treinador*. Ao abrir esse link de retorno, o treinador confere e aplica no calendário.
 - Backup e importação dos dados em `.json`.
 
-## Onde ficam os dados
+## Nuvem (opcional)
+
+Com o Supabase configurado (veja [supabase/COMO-CONFIGURAR.md](supabase/COMO-CONFIGURAR.md)):
+
+- O treinador entra com email e senha e os treinos ficam salvos na conta.
+- A atleta recebe um **convite**, cria a conta dela e vê o plano sempre atualizado,
+  marcando os treinos feitos direto no site.
+- As regras de acesso ficam no próprio banco ([supabase/schema.sql](supabase/schema.sql)):
+  cada treinador só vê as atletas dele; a atleta só lê o plano dela e só registra "como foi".
+
+Sem a nuvem configurada, o site funciona como abaixo.
+
+## Onde ficam os dados (sem nuvem)
 
 Os treinos ficam salvos **no navegador de quem monta o plano** (localStorage). Faça backup de vez em quando
 pelo menu `⋯ → Baixar backup`. O link da atleta leva uma cópia do plano daquele momento: se mudar os treinos,

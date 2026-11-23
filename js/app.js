@@ -97,13 +97,14 @@ function toast(msg) {
 /* ================= Caixa de confirmação / texto =================
    Substitui confirm() e prompt(): alguns navegadores (painéis embutidos, navegador interno
    do WhatsApp/Instagram) bloqueiam essas janelas e o confirm() devolve "false" sem mostrar nada. */
-function ask({ title, text = '', ok = 'Confirmar', danger = false, input = null }) {
+function ask({ title, text = '', ok = 'Confirmar', danger = false, input = null, inputType = 'text' }) {
   return new Promise(resolve => {
     const d = $('#askDialog'), inp = $('#askInput'), okBtn = $('#askOk');
     $('#askTitle').textContent = title;
     $('#askText').textContent = text;
     $('#askText').hidden = !text;
     inp.hidden = input === null;
+    inp.type = inputType;
     inp.value = input === null ? '' : input;
     okBtn.textContent = ok;
     okBtn.className = 'btn ' + (danger ? 'danger' : 'primary');
@@ -179,6 +180,7 @@ function loadDB() {
 }
 function saveDB() {
   if (readOnly) return;
+  if (typeof Cloud !== 'undefined' && Cloud.mode === 'coach') { saveUI(); cloudSchedule(); return; }
   try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
   catch (e) { toast('Não foi possível salvar neste navegador'); }
 }
@@ -922,6 +924,18 @@ async function sendFeedback() {
   );
 }
 
+async function openSnapshotLink() {
+  const code = await encodePlan(athlete());
+  const url = `${location.origin}${location.pathname}${SHARE_PREFIX}${code}`;
+  if (Cloud.mode !== 'coach') $('#shareExtra').innerHTML = '';
+  openLinkDialog(
+    'Link sem login (cópia do plano)',
+    'Este link leva uma cópia do plano de agora, sem precisar de conta. Se você mudar os treinos, gere e envie um link novo. A atleta pode marcar os treinos feitos e te mandar o retorno por outro link.',
+    url,
+    `Seu plano de treino: ${url}`,
+  );
+}
+
 function openLinkDialog(title, text, url, whatsText) {
   $('#shareTitle').textContent = title;
   $('#shareText').textContent = text;
@@ -1210,11 +1224,24 @@ function bindEvents() {
   $('#wZone').addEventListener('change', updateTargetLine);
   RPE.forEach((l, i) => { const o = el('option', null, l || '—'); o.value = i ? String(i) : ''; $('#fRpe').append(o); });
   // Atleta (link somente leitura): salva o "como foi" no navegador dela
-  $('#btnSaveResult').onclick = () => {
+  $('#btnSaveResult').onclick = async () => {
     const w = athlete().workouts.find(x => x.id === editingId);
     if (!w) return;
     const r = readResult();
     if (r === undefined) return;
+    if (Cloud.mode === 'athlete') {
+      const btn = $('#btnSaveResult');
+      btn.disabled = true;
+      const saved = await cloudSaveResult(w, r);
+      btn.disabled = false;
+      if (!saved) return;
+      w.result = r;
+      Cloud.synced = snapshot();
+      $('#workoutDialog').close();
+      renderCalendar();
+      toast(r && r.done ? 'Treino marcado como feito ✓' : 'Salvo');
+      return;
+    }
     const fb = loadFeedback();
     if (r) fb[w.id] = r; else delete fb[w.id];
     if (!saveFeedback(fb)) return;
@@ -1315,16 +1342,7 @@ function bindEvents() {
   };
 
   // Link
-  $('#btnShare').onclick = async () => {
-    const code = await encodePlan(athlete());
-    const url = `${location.origin}${location.pathname}${SHARE_PREFIX}${code}`;
-    openLinkDialog(
-      'Link para a atleta',
-      'Envie este link para a atleta ver o calendário no celular ou computador. Ela pode marcar os treinos feitos e te mandar o retorno. O link leva uma cópia do plano de agora: se você mudar os treinos, gere e envie um link novo.',
-      url,
-      `Seu plano de treino: ${url}`,
-    );
-  };
+  $('#btnShare').onclick = () => (Cloud.mode === 'coach' ? openInvite() : openSnapshotLink());
   $('#btnCopyLink').onclick = async () => {
     try { await navigator.clipboard.writeText($('#shareLink').value); toast('Link copiado'); }
     catch (e) { $('#shareLink').select(); document.execCommand('copy'); toast('Link copiado'); }
@@ -1334,6 +1352,8 @@ function bindEvents() {
 
 /* ================= Início ================= */
 async function init() {
+  renderLegend($('#legend'));
+  bindEvents();
   if (location.hash.startsWith(SHARE_PREFIX)) {
     try {
       const shared = await decodePlan(location.hash.slice(SHARE_PREFIX.length));
@@ -1352,13 +1372,20 @@ async function init() {
       toast('Link de plano inválido');
     }
   }
+  if (!db && await cloudBoot()) {
+    if (Cloud.mode === 'coach') await maybeIncomingFeedback();
+    return;
+  }
   if (!db) db = loadDB();
-  renderLegend($('#legend'));
-  bindEvents();
   render();
+  await maybeIncomingFeedback();
+}
+
+async function maybeIncomingFeedback() {
   if (!readOnly && location.hash.startsWith(FEEDBACK_PREFIX)) {
     try { showIncomingFeedback(await decodeFeedback(location.hash.slice(FEEDBACK_PREFIX.length))); }
     catch (e) { console.error(e); toast('Link de retorno inválido'); }
   }
 }
-init();
+// espera todos os scripts (inclusive cloud.js) carregarem
+document.addEventListener('DOMContentLoaded', init);

@@ -5,18 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendário de Treinos</title>
   <meta name="description" content="Calendário de treinos de corrida, ciclismo e natação.">
-  <!-- Segurança: só carrega scripts deste site e do cdnjs; sem plugins; não envia referer -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'self'">
+  <!-- Segurança: só carrega scripts deste site, do cdnjs e do jsDelivr; só conversa com o Supabase; sem plugins; não envia referer -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob: https://*.supabase.co wss://*.supabase.co; object-src 'none'; base-uri 'self'">
   <meta name="referrer" content="no-referrer">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- ?v= força o navegador a baixar a versão nova depois de cada publicação -->
-  <link rel="stylesheet" href="css/style.css?v=6">
+  <link rel="stylesheet" href="css/style.css?v=7">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
           integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-  <script src="js/app.js?v=6" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"
+          integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK"
+          crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+  <script src="js/config.js?v=7" defer></script>
+  <script src="js/app.js?v=7" defer></script>
+  <script src="js/cloud.js?v=7" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -42,6 +47,7 @@
     </div>
 
     <div class="top-actions">
+      <span id="syncStatus" class="sync" hidden></span>
       <button type="button" class="btn ghost edit-only" id="btnShare">Link da atleta</button>
       <button type="button" class="btn primary" id="btnExport">Exportar imagem</button>
       <details class="dropdown edit-only">
@@ -51,11 +57,23 @@
           <button type="button" data-act="import">Importar backup (.json)</button>
         </div>
       </details>
+      <span id="account" class="account" hidden>
+        <button type="button" class="btn ghost" id="btnLogin">Entrar</button>
+        <details class="dropdown" id="accountMenu" hidden>
+          <summary class="btn ghost icon" title="Minha conta">
+            <svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+          </summary>
+          <div class="menu right">
+            <div class="menu-info"><b id="accountEmail"></b><span id="accountRole" class="muted"></span></div>
+            <button type="button" id="btnLogout">Sair</button>
+          </div>
+        </details>
+      </span>
     </div>
   </header>
 
   <div id="readonlyBanner" class="banner" hidden>
-    <span>Plano de treino de <strong id="roName"></strong> · somente visualização</span>
+    <span>Plano de treino de <strong id="roName"></strong><select id="roSelect" class="ro-select" hidden aria-label="Plano"></select></span>
     <span id="legacyNote" class="legacy-note" hidden>Este link é de uma versão antiga: peça um link novo para poder marcar os treinos feitos.</span>
     <span class="banner-actions">
       <button type="button" class="btn small ghost" id="btnRoZones">Minhas zonas</button>
@@ -213,6 +231,7 @@
     </div>
     <p class="muted" id="shareText"></p>
     <textarea id="shareLink" rows="4" readonly></textarea>
+    <div id="shareExtra" class="share-extra"></div>
     <div class="dlg-foot">
       <span class="spacer"></span>
       <a class="btn ghost" id="btnWhats" target="_blank" rel="noopener">Enviar no WhatsApp</a>
@@ -270,6 +289,30 @@
       <button type="button" class="btn ghost" data-close>Agora não</button>
       <button type="button" class="btn primary" id="btnFbApply">Aplicar retorno</button>
     </div>
+  </dialog>
+
+  <!-- Login -->
+  <dialog id="authDialog" class="dialog ask auth">
+    <form id="authForm" novalidate>
+      <div class="dlg-head"><h2 id="authTitle">Entrar</h2></div>
+      <div class="ask-body">
+        <p id="authInvite" class="invite-note" hidden>Você recebeu um convite para ver um plano de treino. Crie sua conta (ou entre, se já tiver) para abrir o plano.</p>
+        <label>Email
+          <input type="email" id="authEmail" autocomplete="email" required maxlength="200">
+        </label>
+        <label>Senha
+          <input type="password" id="authPass" autocomplete="current-password" required minlength="8" maxlength="72">
+        </label>
+        <p id="authPassHint" class="muted small" hidden>Mínimo de 8 caracteres.</p>
+        <p id="authMsg" class="auth-msg" role="alert"></p>
+        <button type="submit" class="btn primary auth-submit" id="btnAuthSubmit">Entrar</button>
+        <div class="auth-links">
+          <button type="button" class="link" id="authSwitch">Não tenho conta — criar</button>
+          <button type="button" class="link" id="btnForgot">Esqueci a senha</button>
+        </div>
+        <button type="button" class="link muted" id="btnLocal">Continuar sem conta (treinos só neste navegador)</button>
+      </div>
+    </form>
   </dialog>
 
   <!-- Confirmação / texto (substitui confirm e prompt do navegador) -->
