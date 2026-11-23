@@ -59,10 +59,30 @@
       <button type="button" class="btn ghost icon" id="btnNext" title="Próximo mês">›</button>
       <h1 id="monthTitle"></h1>
     </div>
-    <div class="legend" id="legend"></div>
+    <div class="monthbar-right">
+      <div class="legend" id="legend"></div>
+      <button type="button" class="btn ghost edit-only" id="btnLibrary" aria-pressed="false">
+        <svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V5M9 19V5M14 19l-1-14M18.5 19L15 5.5"/></svg>
+        Biblioteca
+      </button>
+    </div>
   </nav>
 
-  <main id="calendar" class="calendar" aria-live="polite"></main>
+  <div class="workspace">
+    <main id="calendar" class="calendar" aria-live="polite"></main>
+
+    <aside id="library" class="library edit-only" hidden aria-label="Biblioteca de treinos">
+      <div class="lib-head">
+        <h2>Biblioteca</h2>
+        <button type="button" class="btn ghost icon" id="btnLibClose" title="Fechar biblioteca">✕</button>
+      </div>
+      <div class="lib-filters" id="libFilters"></div>
+      <input type="search" id="libSearch" class="lib-search" placeholder="Buscar modelo...">
+      <p class="lib-hint">Arraste um modelo para um dia do calendário, ou clique nele para escolher a data.</p>
+      <div class="lib-list" id="libList"></div>
+      <button type="button" class="btn ghost lib-new" id="btnLibNew">+ Novo modelo</button>
+    </aside>
+  </div>
 
   <p class="hint edit-only">Dica: clique no <b>+</b> de um dia para criar um treino. Arraste um treino para outro dia para mover (segure <b>Ctrl</b> para copiar).</p>
 
@@ -77,8 +97,8 @@
         <div class="sport-pick" id="sportPick"></div>
 
         <div class="row">
-          <label>Data
-            <input type="date" id="wDate" required>
+          <label id="wDateLabel">Data
+            <input type="date" id="wDate">
           </label>
           <label>Duração
             <input type="text" id="wDuration" placeholder="ex: 1:30 ou 45" inputmode="numeric">
@@ -111,6 +131,7 @@
       <div class="dlg-foot">
         <button type="button" class="btn danger-ghost edit-only" id="btnDelete">Excluir</button>
         <button type="button" class="btn ghost edit-only" id="btnDuplicate">Duplicar</button>
+        <button type="button" class="btn ghost edit-only" id="btnToLibrary">Salvar na biblioteca</button>
         <span class="spacer"></span>
         <button type="button" class="btn ghost" data-close>Fechar</button>
         <button type="submit" class="btn primary edit-only" id="btnSave">Salvar</button>

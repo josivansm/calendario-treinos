@@ -99,17 +99,44 @@ let readOnly = false;
 let viewDate = startOfMonth(new Date());
 let weekClipboard = null;
 
+const DEFAULT_LIBRARY = [
+  ['run', 'Regenerativo', 30, 5, 'Z1', '30 min bem leve, ritmo de conversa fácil', ''],
+  ['run', 'Rodagem leve', 45, 7, 'Z2', '45 min contínuo em ritmo confortável', ''],
+  ['run', 'Fartlek', 45, 8, 'Z3', 'Aquecimento: 10 min leve\nPrincipal: 8 x (1 min forte / 2 min leve)\nDesaquecimento: 10 min leve', ''],
+  ['run', 'Tiros 400 m', 50, 8, 'Z5', 'Aquecimento: 15 min leve\nPrincipal: 8 x 400 m forte / 200 m trote\nDesaquecimento: 10 min leve', 'De preferência em pista ou plano'],
+  ['run', 'Longão', 90, 15, 'Z2', 'Contínuo em ritmo confortável', 'Hidratar a cada 20 min'],
+  ['bike', 'Pedal leve', 60, 25, 'Z2', 'Pedal contínuo, cadência 85–95 rpm', ''],
+  ['bike', 'Intervalado 4 x 6 min', 60, 25, 'Z4', 'Aquecimento: 15 min\nPrincipal: 4 x 6 min forte / 3 min leve\nDesaquecimento: 10 min', ''],
+  ['bike', 'Cadência', 50, 20, 'Z2', 'Aquecimento: 10 min\nPrincipal: 6 x 3 min cadência alta (100+ rpm) / 2 min normal\nDesaquecimento: 10 min', ''],
+  ['bike', 'Longão', 180, 70, 'Z2', 'Pedal contínuo em ritmo confortável', 'Levar 2 caramanholas e alimentação'],
+  ['swim', 'Técnica', 45, 1500, 'Z2', 'Aquecimento: 300 m livre\nPrincipal: 8 x 100 m educativos / 20s\nDesaquecimento: 200 m solto', 'Foco na respiração bilateral'],
+  ['swim', 'Contínuo', 40, 1800, 'Z2', '1.800 m contínuos em ritmo confortável', ''],
+  ['swim', 'Séries 10 x 100 m', 50, 2000, 'Z3', 'Aquecimento: 400 m\nPrincipal: 10 x 100 m moderado / 20s\nDesaquecimento: 200 m solto', ''],
+];
+function defaultLibrary() {
+  return DEFAULT_LIBRARY.map(([sport, title, duration, distance, zone, desc, notes], i) =>
+    ({ id: uid(), sport, title, duration, distance, zone, desc, notes, order: i }));
+}
+function sanitizeTemplate(t) {
+  const w = sanitizeWorkout({ ...t, date: '2000-01-01' });
+  delete w.date;
+  return w;
+}
+
 function newAthlete(name) { return { id: uid(), name, workouts: [] }; }
 function loadDB() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if (d && Array.isArray(d.athletes) && d.athletes.length) return d;
+      if (d && Array.isArray(d.athletes) && d.athletes.length) {
+        if (!Array.isArray(d.library)) d.library = defaultLibrary();
+        return d;
+      }
     }
   } catch (e) { /* sem armazenamento */ }
   const a = newAthlete('Minha atleta');
-  return { athletes: [a], currentId: a.id };
+  return { athletes: [a], currentId: a.id, library: defaultLibrary() };
 }
 function saveDB() {
   if (readOnly) return;
@@ -203,7 +230,7 @@ function renderHeader() {
   document.title = readOnly ? `Treinos · ${athlete().name}` : 'Calendário de Treinos';
 }
 
-function workoutCard(w) {
+function workoutCard(w, opts = {}) {
   const c = el('div', 'wk');
   c.style.setProperty('--sport', SPORTS[w.sport].color);
   c.dataset.id = w.id;
@@ -218,13 +245,14 @@ function workoutCard(w) {
   if (meta.childNodes.length) c.append(meta);
   if (w.desc) c.append(el('div', 'wk-desc', w.desc));
 
-  c.addEventListener('click', () => openWorkout(w.id));
-  c.addEventListener('keydown', e => { if (e.key === 'Enter') openWorkout(w.id); });
+  const open = opts.template ? () => openWorkout(null, defaultUseDate(), w) : () => openWorkout(w.id);
+  c.addEventListener('click', open);
+  c.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
   if (!readOnly) {
     c.draggable = true;
     c.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('text/plain', w.id);
-      e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData('text/plain', opts.template ? `tpl:${w.id}` : w.id);
+      e.dataTransfer.effectAllowed = opts.template ? 'copy' : 'copyMove';
       c.classList.add('dragging');
     });
     c.addEventListener('dragend', () => c.classList.remove('dragging'));
@@ -331,14 +359,16 @@ function renderCalendar() {
       if (!readOnly) {
         cell.addEventListener('dragover', e => {
           e.preventDefault();
-          e.dataTransfer.dropEffect = e.ctrlKey || e.altKey ? 'copy' : 'move';
+          e.dataTransfer.dropEffect = e.dataTransfer.effectAllowed === 'copy' || e.ctrlKey || e.altKey ? 'copy' : 'move';
           cell.classList.add('drop');
         });
         cell.addEventListener('dragleave', e => { if (!cell.contains(e.relatedTarget)) cell.classList.remove('drop'); });
         cell.addEventListener('drop', e => {
           e.preventDefault();
           cell.classList.remove('drop');
-          moveWorkout(e.dataTransfer.getData('text/plain'), key, e.ctrlKey || e.altKey);
+          const data = e.dataTransfer.getData('text/plain');
+          if (data.startsWith('tpl:')) addFromTemplate(data.slice(4), key);
+          else moveWorkout(data, key, e.ctrlKey || e.altKey);
         });
         cell.addEventListener('dblclick', e => {
           if (e.target === cell || e.target.classList.contains('day-top')) openWorkout(null, key);
@@ -351,7 +381,59 @@ function renderCalendar() {
   }
 }
 
-function render() { renderHeader(); renderCalendar(); }
+function render() { renderHeader(); renderCalendar(); renderLibrary(); }
+
+/* ================= Biblioteca ================= */
+let libFilter = 'all';
+
+function renderLibrary() {
+  if (readOnly) return;
+  const lib = $('#library');
+  const open = !!db.libraryOpen;
+  lib.hidden = !open;
+  $('#btnLibrary').setAttribute('aria-pressed', String(open));
+  if (!open) return;
+
+  $$('#libFilters .chip').forEach(c => c.setAttribute('aria-pressed', String(c.dataset.filter === libFilter)));
+  const q = $('#libSearch').value.trim().toLowerCase();
+  const items = db.library
+    .filter(t => libFilter === 'all' || t.sport === libFilter)
+    .filter(t => !q || `${t.title} ${t.desc} ${SPORTS[t.sport].label}`.toLowerCase().includes(q))
+    .sort((a, b) => SPORT_KEYS.indexOf(a.sport) - SPORT_KEYS.indexOf(b.sport) || a.order - b.order);
+
+  const list = $('#libList');
+  list.innerHTML = '';
+  if (!items.length) list.append(el('div', 'lib-empty', db.library.length ? 'Nenhum modelo encontrado' : 'Biblioteca vazia'));
+  items.forEach(t => {
+    const c = workoutCard({ ...t, id: t.id }, { template: true });
+    const ed = el('button', 'lib-edit', '✎');
+    ed.type = 'button';
+    ed.title = 'Editar modelo';
+    ed.onclick = e => { e.stopPropagation(); openTemplate(t.id); };
+    c.append(ed);
+    list.append(c);
+  });
+}
+
+function addFromTemplate(tplId, date) {
+  const t = db.library.find(x => x.id === tplId);
+  if (!t) return;
+  athlete().workouts.push(sanitizeWorkout({ ...t, id: uid(), date, order: nextOrder(date) }));
+  saveDB(); renderCalendar();
+  toast(`"${t.title || SPORTS[t.sport].label}" adicionado em ${fmtDM(parseISO(date))}`);
+}
+
+function defaultUseDate() {
+  const today = new Date();
+  const inView = today.getMonth() === viewDate.getMonth() && today.getFullYear() === viewDate.getFullYear();
+  return iso(inView ? today : startOfMonth(viewDate));
+}
+
+function setLibraryOpen(open) {
+  db.libraryOpen = open;
+  saveDB();
+  renderLibrary();
+}
 
 function moveWorkout(id, date, copy) {
   const w = athlete().workouts.find(x => x.id === id);
@@ -378,23 +460,67 @@ function setSport(k) {
   $('#wDistance').step = SPORTS[k].step;
 }
 
-function openWorkout(id, date) {
+let dialogMode = 'workout'; // 'workout' | 'template'
+
+function fillForm(src, date) {
+  setSport(src ? src.sport : currentSport);
+  $('#wDate').value = date || '';
+  $('#wTitle').value = src ? src.title : '';
+  $('#wDuration').value = src ? durInput(src.duration) : '';
+  $('#wDistance').value = src && src.distance ? src.distance : '';
+  $('#wZone').value = src ? src.zone : '';
+  $('#wDesc').value = src ? src.desc : '';
+  $('#wNotes').value = src ? src.notes : '';
+}
+
+// id: treino existente · date: data para treino novo · prefill: modelo da biblioteca para preencher
+function openWorkout(id, date, prefill) {
+  dialogMode = 'workout';
   const w = id ? athlete().workouts.find(x => x.id === id) : null;
   editingId = w ? w.id : null;
-  $('#wDialogTitle').textContent = readOnly ? 'Treino' : (w ? 'Editar treino' : 'Novo treino');
-  setSport(w ? w.sport : currentSport);
-  $('#wDate').value = w ? w.date : date;
-  $('#wTitle').value = w ? w.title : '';
-  $('#wDuration').value = w ? durInput(w.duration) : '';
-  $('#wDistance').value = w && w.distance ? w.distance : '';
-  $('#wZone').value = w ? w.zone : '';
-  $('#wDesc').value = w ? w.desc : '';
-  $('#wNotes').value = w ? w.notes : '';
+  $('#wDialogTitle').textContent = readOnly ? 'Treino' : (w ? 'Editar treino' : prefill ? 'Usar modelo da biblioteca' : 'Novo treino');
+  fillForm(w || prefill, w ? w.date : date);
+  $('#wDateLabel').hidden = false;
   $('#wFields').disabled = readOnly;
   $('#btnDelete').hidden = !w;
   $('#btnDuplicate').hidden = !w;
+  $('#btnToLibrary').hidden = false;
+  $('#btnSave').textContent = prefill ? 'Adicionar ao calendário' : 'Salvar';
   $('#workoutDialog').showModal();
-  if (!readOnly && !w) $('#wTitle').focus();
+  if (prefill) $('#wDate').focus();
+  else if (!readOnly && !w) $('#wTitle').focus();
+}
+
+function openTemplate(id) {
+  dialogMode = 'template';
+  const t = id ? db.library.find(x => x.id === id) : null;
+  editingId = t ? t.id : null;
+  $('#wDialogTitle').textContent = t ? 'Editar modelo da biblioteca' : 'Novo modelo da biblioteca';
+  fillForm(t, '');
+  if (!t && libFilter !== 'all') setSport(libFilter);
+  $('#wDateLabel').hidden = true;
+  $('#wFields').disabled = false;
+  $('#btnDelete').hidden = !t;
+  $('#btnDuplicate').hidden = true;
+  $('#btnToLibrary').hidden = true;
+  $('#btnSave').textContent = 'Salvar modelo';
+  $('#workoutDialog').showModal();
+  $('#wTitle').focus();
+}
+
+function saveTemplateFromForm(existingId) {
+  const data = readForm();
+  if (!data) return false;
+  delete data.date;
+  if (!data.title) { toast('Dê um título ao modelo'); $('#wTitle').focus(); return false; }
+  if (existingId) {
+    const t = db.library.find(x => x.id === existingId);
+    Object.assign(t, sanitizeTemplate({ ...t, ...data }));
+  } else {
+    db.library.push(sanitizeTemplate({ ...data, id: uid(), order: Math.max(0, ...db.library.map(t => t.order)) + 1 }));
+  }
+  saveDB();
+  return true;
 }
 
 function readForm() {
@@ -419,6 +545,13 @@ function readForm() {
 function saveWorkout(e) {
   e.preventDefault();
   if (readOnly) return;
+  if (dialogMode === 'template') {
+    if (!saveTemplateFromForm(editingId)) return;
+    $('#workoutDialog').close();
+    renderLibrary();
+    toast('Modelo salvo na biblioteca');
+    return;
+  }
   const data = readForm();
   if (!data) return;
   if (!data.date) { toast('Informe a data'); return; }
@@ -621,6 +754,8 @@ function importBackup(file) {
       db = {
         athletes: d.athletes.map(a => ({ id: a.id || uid(), name: String(a.name || 'Atleta'), workouts: (a.workouts || []).map(sanitizeWorkout) })),
         currentId: d.currentId,
+        library: Array.isArray(d.library) ? d.library.map(t => sanitizeTemplate({ ...t, id: t.id || uid() })) : db.library,
+        libraryOpen: db.libraryOpen,
       };
       saveDB(); render();
       toast('Backup importado');
@@ -693,6 +828,14 @@ function bindEvents() {
     t.setSelectionRange(13 + (t.value.length - tpl.length), 13 + (t.value.length - tpl.length));
   };
   $('#btnDelete').onclick = () => {
+    if (dialogMode === 'template') {
+      const t = db.library.find(x => x.id === editingId);
+      if (!t || !confirm(`Excluir o modelo "${t.title}" da biblioteca? Os treinos já colocados no calendário não mudam.`)) return;
+      db.library = db.library.filter(x => x.id !== editingId);
+      saveDB(); $('#workoutDialog').close(); renderLibrary();
+      toast('Modelo excluído');
+      return;
+    }
     if (!editingId || !confirm('Excluir este treino?')) return;
     athlete().workouts = athlete().workouts.filter(w => w.id !== editingId);
     saveDB(); $('#workoutDialog').close(); renderCalendar();
@@ -706,6 +849,27 @@ function bindEvents() {
     saveDB(); $('#workoutDialog').close(); renderCalendar();
     toast('Treino duplicado no mesmo dia — arraste para onde quiser');
   };
+
+  $('#btnToLibrary').onclick = () => {
+    if (!saveTemplateFromForm(null)) return;
+    db.libraryOpen = true;
+    saveDB(); renderLibrary();
+    toast('Salvo na biblioteca');
+  };
+
+  // Biblioteca
+  const filters = $('#libFilters');
+  [['all', 'Todos'], ...SPORT_KEYS.map(k => [k, SPORTS[k].label])].forEach(([k, label]) => {
+    const c = el('button', 'chip', label);
+    c.type = 'button';
+    c.dataset.filter = k;
+    c.onclick = () => { libFilter = k; renderLibrary(); };
+    filters.append(c);
+  });
+  $('#libSearch').addEventListener('input', renderLibrary);
+  $('#btnLibrary').onclick = () => setLibraryOpen(!db.libraryOpen);
+  $('#btnLibClose').onclick = () => setLibraryOpen(false);
+  $('#btnLibNew').onclick = () => openTemplate(null);
 
   // Exportar
   $('#btnExport').onclick = () => {

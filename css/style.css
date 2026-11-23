@@ -183,6 +183,47 @@ body.readonly .edit-only { display: none !important; }
 
 .hint { color: var(--muted); font-size: 12px; padding: 0 20px 24px; margin: 0; }
 
+/* ---------- Biblioteca ---------- */
+.monthbar-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.btn-ico { width: 16px; height: 16px; }
+#btnLibrary[aria-pressed="true"] { background: #e8f1ff; border-color: var(--primary); color: var(--primary); }
+.workspace { display: flex; align-items: flex-start; }
+.workspace > .calendar { flex: 1; min-width: 0; }
+.library {
+  width: 290px; flex: none; margin: 0 20px 12px 0; position: sticky; top: 8px;
+  max-height: calc(100vh - 16px); display: flex; flex-direction: column; gap: 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px;
+}
+.lib-head { display: flex; align-items: center; justify-content: space-between; }
+.lib-head h2 { margin: 0; font-size: 15px; font-weight: 800; }
+.lib-filters { display: flex; gap: 5px; flex-wrap: wrap; }
+.lib-filters .chip[aria-pressed="true"] { background: var(--navy); border-color: var(--navy); color: #fff; }
+.lib-search {
+  font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; width: 100%;
+}
+.lib-hint { margin: 0; color: var(--muted); font-size: 11.5px; }
+.lib-list { overflow: auto; display: flex; flex-direction: column; gap: 6px; flex: 1; min-height: 80px; padding-right: 2px; }
+.lib-list .wk { cursor: grab; position: relative; padding-right: 30px; }
+.lib-list .wk:active { cursor: grabbing; }
+.lib-edit {
+  position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border: 0; border-radius: 5px;
+  background: none; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1;
+}
+.lib-edit:hover { background: var(--surface-2); color: var(--primary); }
+.lib-empty { color: var(--muted); font-size: 12px; text-align: center; padding: 16px 0; }
+.lib-new { justify-content: center; }
+
+@media (max-width: 1200px) {
+  .library { width: 240px; }
+  .cal-head, .cal-week { grid-template-columns: repeat(7, minmax(0, 1fr)) 150px; }
+}
+@media (max-width: 820px) {
+  .library {
+    position: fixed; inset: auto 0 0 0; top: auto; width: auto; margin: 0; max-height: 70vh; z-index: 40;
+    border-radius: 14px 14px 0 0; box-shadow: 0 -12px 40px rgba(15,39,66,.25);
+  }
+}
+
 /* ---------- Dialogs ---------- */
 .dialog {
   border: 0; border-radius: 12px; padding: 0; width: min(640px, calc(100vw - 24px));
