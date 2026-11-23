@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calendário de Treinos</title>
+  <meta name="description" content="Calendário de treinos de corrida, ciclismo e natação.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      </span>
+      <span class="brand-name">Calendário de Treinos</span>
+    </div>
+
+    <div class="athlete edit-only">
+      <label for="athleteSelect" class="sr-only">Atleta</label>
+      <select id="athleteSelect"></select>
+      <details class="dropdown">
+        <summary class="btn ghost icon" title="Gerenciar atletas">⋯</summary>
+        <div class="menu">
+          <button type="button" data-act="athlete-new">+ Nova atleta</button>
+          <button type="button" data-act="athlete-rename">Renomear atleta</button>
+          <button type="button" data-act="athlete-delete" class="danger">Excluir atleta</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="top-actions">
+      <button type="button" class="btn ghost edit-only" id="btnShare">Link da atleta</button>
+      <button type="button" class="btn primary" id="btnExport">Exportar imagem</button>
+      <details class="dropdown edit-only">
+        <summary class="btn ghost icon" title="Mais opções">⋯</summary>
+        <div class="menu right">
+          <button type="button" data-act="backup">Baixar backup (.json)</button>
+          <button type="button" data-act="import">Importar backup (.json)</button>
+        </div>
+      </details>
+    </div>
+  </header>
+
+  <div id="readonlyBanner" class="banner" hidden>
+    <span>Plano de treino de <strong id="roName"></strong> · somente visualização</span>
+    <button type="button" class="btn small" id="btnSaveShared">Salvar no meu calendário</button>
+  </div>
+
+  <nav class="monthbar">
+    <div class="month-nav">
+      <button type="button" class="btn ghost icon" id="btnPrev" title="Mês anterior">‹</button>
+      <button type="button" class="btn ghost" id="btnToday">Hoje</button>
+      <button type="button" class="btn ghost icon" id="btnNext" title="Próximo mês">›</button>
+      <h1 id="monthTitle"></h1>
+    </div>
+    <div class="legend" id="legend"></div>
+  </nav>
+
+  <main id="calendar" class="calendar" aria-live="polite"></main>
+
+  <p class="hint edit-only">Dica: clique no <b>+</b> de um dia para criar um treino. Arraste um treino para outro dia para mover (segure <b>Ctrl</b> para copiar).</p>
+
+  <!-- Treino -->
+  <dialog id="workoutDialog" class="dialog">
+    <form method="dialog" id="workoutForm">
+      <div class="dlg-head">
+        <h2 id="wDialogTitle">Novo treino</h2>
+        <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+      </div>
+      <fieldset id="wFields">
+        <div class="sport-pick" id="sportPick"></div>
+
+        <div class="row">
+          <label>Data
+            <input type="date" id="wDate" required>
+          </label>
+          <label>Duração
+            <input type="text" id="wDuration" placeholder="ex: 1:30 ou 45" inputmode="numeric">
+          </label>
+          <label>Distância <span id="wDistUnit" class="unit">km</span>
+            <input type="number" id="wDistance" min="0" step="0.1" placeholder="0">
+          </label>
+        </div>
+
+        <div class="row">
+          <label class="grow">Título
+            <input type="text" id="wTitle" maxlength="80" placeholder="ex: Rodagem leve, Longão, Tiros 400 m">
+          </label>
+          <label>Intensidade
+            <select id="wZone"></select>
+          </label>
+        </div>
+
+        <label>Estrutura do treino
+          <textarea id="wDesc" rows="6" placeholder="Aquecimento: 10 min leve&#10;Principal: 6 x 400 m forte / 200 m trote&#10;Desaquecimento: 10 min leve"></textarea>
+        </label>
+        <div class="desc-tools edit-only">
+          <button type="button" class="chip" id="btnStructure">Inserir estrutura (aquec. / principal / desaquec.)</button>
+        </div>
+
+        <label>Observações
+          <textarea id="wNotes" rows="2" placeholder="Dicas, hidratação, pace alvo, local..."></textarea>
+        </label>
+      </fieldset>
+      <div class="dlg-foot">
+        <button type="button" class="btn danger-ghost edit-only" id="btnDelete">Excluir</button>
+        <button type="button" class="btn ghost edit-only" id="btnDuplicate">Duplicar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>Fechar</button>
+        <button type="submit" class="btn primary edit-only" id="btnSave">Salvar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Exportar -->
+  <dialog id="exportDialog" class="dialog wide">
+    <div class="dlg-head">
+      <h2>Exportar imagem</h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <div class="export-opts">
+      <div class="presets">
+        <button type="button" class="chip" data-preset="week">Esta semana</button>
+        <button type="button" class="chip" data-preset="next">Próxima semana</button>
+        <button type="button" class="chip" data-preset="month">Mês visível</button>
+      </div>
+      <div class="row">
+        <label>De <input type="date" id="exFrom"></label>
+        <label>Até <input type="date" id="exTo"></label>
+        <label>Formato
+          <select id="exLayout">
+            <option value="list">Lista (ideal para celular)</option>
+            <option value="grid">Calendário (grade)</option>
+          </select>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="exDesc" checked> Incluir estrutura e observações dos treinos</label>
+    </div>
+    <div class="preview" id="exPreview"><p class="muted">Escolha o período e clique em <b>Gerar imagem</b>.</p></div>
+    <div class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="btnGen">Gerar imagem</button>
+      <button type="button" class="btn ghost" id="btnShareImg" hidden>Compartilhar</button>
+      <button type="button" class="btn primary" id="btnDownload" disabled>Baixar PNG</button>
+    </div>
+  </dialog>
+
+  <!-- Link -->
+  <dialog id="shareDialog" class="dialog">
+    <div class="dlg-head">
+      <h2>Link para a atleta</h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <p class="muted">Envie este link para a atleta ver o calendário no celular ou computador. O link leva uma cópia do plano <b>de agora</b>: se você mudar os treinos, gere e envie um link novo.</p>
+    <textarea id="shareLink" rows="4" readonly></textarea>
+    <div class="dlg-foot">
+      <span class="spacer"></span>
+      <a class="btn ghost" id="btnWhats" target="_blank" rel="noopener">Enviar no WhatsApp</a>
+      <button type="button" class="btn primary" id="btnCopyLink">Copiar link</button>
+    </div>
+  </dialog>
+
+  <input type="file" id="importFile" accept="application/json,.json" hidden>
+  <div id="toast" class="toast" role="status"></div>
+</body>
+</html>
