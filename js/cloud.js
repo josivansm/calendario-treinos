@@ -71,7 +71,7 @@ function newInviteCode() {
 /* ---------- Conversão linha do banco ⇄ app ---------- */
 const workoutRow = (w, athleteId) => ({
   id: w.id, athlete_id: athleteId, date: w.date, sport: w.sport, title: w.title,
-  duration: w.duration, distance: w.distance, zone: w.zone, description: w.desc, notes: w.notes, sort: w.order,
+  duration: w.duration, distance: w.distance, zone: w.zone, description: w.desc, notes: w.notes, sort: w.order, steps: w.steps || null,
 });
 const resultRow = w => ({
   workout_id: w.id, done: w.result.done, duration: w.result.duration, distance: w.result.distance,
@@ -128,7 +128,7 @@ async function cloudFetch() {
     linked: !!a.athlete_user_id,
     workouts: (byAthlete[a.id] || []).map(w => sanitizeWorkout({
       id: w.id, date: w.date, sport: w.sport, title: w.title, duration: w.duration, distance: +w.distance,
-      zone: w.zone, desc: w.description, notes: w.notes, order: w.sort, result: res[w.id] || null,
+      zone: w.zone, desc: w.description, notes: w.notes, order: w.sort, steps: w.steps, result: res[w.id] || null,
     })),
   });
   return {
@@ -234,6 +234,7 @@ async function cloudStart(user) {
     };
     Cloud.synced = emptyCloud ? { athletes: {}, workouts: {}, results: {}, library: null } : snapshot();
     if (!data.library) Cloud.synced.library = null; // biblioteca ainda não está na nuvem
+    upgradeLibrary(db.library); // se mudar algo, vai para a nuvem no próximo envio
     if (emptyCloud) await firstCoachSetup();
     if (!db.athletes.some(a => a.id === db.currentId)) db.currentId = db.athletes[0].id;
     render();

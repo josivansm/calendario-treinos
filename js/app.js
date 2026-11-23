@@ -153,9 +153,32 @@ const DEFAULT_LIBRARY = [
   ['swim', 'Contínuo', 40, 1800, 'Z2', '1.800 m contínuos em ritmo confortável', ''],
   ['swim', 'Séries 10 x 100 m', 50, 2000, 'Z3', 'Aquecimento: 400 m\nPrincipal: 10 x 100 m moderado / 20s\nDesaquecimento: 200 m solto', ''],
 ];
+const S = (kind, value, unit, zone) => ({ t: 'step', kind, value, unit, zone, note: '' });
+const R = (n, ...steps) => ({ t: 'repeat', n, steps });
+// modelos que já vêm montados em blocos (os demais ficam em texto livre)
+const DEFAULT_STEPS = {
+  'Fartlek': [S('warmup', 10, 'min', 'Z1'), R(8, S('work', 1, 'min', 'Z4'), S('recovery', 2, 'min', 'Z1')), S('cooldown', 10, 'min', 'Z1')],
+  'Tiros 400 m': [S('warmup', 15, 'min', 'Z1'), R(8, S('work', 400, 'm', 'Z5'), S('recovery', 200, 'm', 'Z1')), S('cooldown', 10, 'min', 'Z1')],
+  'Intervalado 4 x 6 min': [S('warmup', 15, 'min', 'Z1'), R(4, S('work', 6, 'min', 'Z4'), S('recovery', 3, 'min', 'Z1')), S('cooldown', 10, 'min', 'Z1')],
+  'Cadência': [S('warmup', 10, 'min', 'Z1'), R(6, S('work', 3, 'min', 'Z3'), S('recovery', 2, 'min', 'Z2')), S('cooldown', 10, 'min', 'Z1')],
+  'Séries 10 x 100 m': [S('warmup', 400, 'm', 'Z1'), R(10, S('work', 100, 'm', 'Z3'), S('recovery', 20, 's', 'Z1')), S('cooldown', 200, 'm', 'Z1')],
+};
 function defaultLibrary() {
   return DEFAULT_LIBRARY.map(([sport, title, duration, distance, zone, desc, notes], i) =>
-    ({ id: uid(), sport, title, duration, distance, zone, desc, notes, order: i }));
+    ({ id: uid(), sport, title, duration, distance, zone, desc, notes, order: i, steps: DEFAULT_STEPS[title] || null }));
+}
+// Bibliotecas criadas antes dos blocos: os modelos padrão de intervalos ganham os blocos,
+// desde que o texto continue igual ao original (modelo não editado).
+function upgradeLibrary(lib) {
+  const original = {};
+  DEFAULT_LIBRARY.forEach(([sport, title, , , , desc]) => (original[title] = { sport, desc }));
+  (lib || []).forEach(t => {
+    const o = original[t.title];
+    if (!t.steps && DEFAULT_STEPS[t.title] && o && o.sport === t.sport && o.desc === t.desc) {
+      t.steps = sanitizeSteps(DEFAULT_STEPS[t.title]);
+    }
+  });
+  return lib;
 }
 function sanitizeTemplate(t) {
   const w = sanitizeWorkout({ ...t, date: '2000-01-01' });
@@ -171,6 +194,7 @@ function loadDB() {
       const d = JSON.parse(raw);
       if (d && Array.isArray(d.athletes) && d.athletes.length) {
         if (!Array.isArray(d.library)) d.library = defaultLibrary();
+        upgradeLibrary(d.library);
         return d;
       }
     }
@@ -199,6 +223,7 @@ function sanitizeWorkout(w) {
     desc: String(w.desc || ''),
     notes: String(w.notes || ''),
     order: +w.order || 0,
+    steps: sanitizeSteps(w.steps),
     result: sanitizeResult(w.result),
   };
 }
@@ -349,7 +374,7 @@ function encodePlan(a) {
   return packJSON({
     n: a.name,
     z: a.zones || null,
-    w: a.workouts.map(w => [w.date, w.sport, w.title, w.duration, w.distance, w.zone, w.desc, w.notes, w.order, w.id, packResult(w.result)]),
+    w: a.workouts.map(w => [w.date, w.sport, w.title, w.duration, w.distance, w.zone, w.desc, w.notes, w.order, w.id, packResult(w.result), w.steps || 0]),
   });
 }
 async function decodePlan(str) {
@@ -362,7 +387,7 @@ async function decodePlan(str) {
     legacy: rows.some(r => !safeId(r[9])),
     workouts: rows.map(r => sanitizeWorkout({
       date: r[0], sport: r[1], title: r[2], duration: r[3], distance: r[4], zone: r[5], desc: r[6], notes: r[7], order: r[8],
-      id: safeId(r[9]) || undefined, result: unpackResult(r[10]),
+      id: safeId(r[9]) || undefined, result: unpackResult(r[10]), steps: Array.isArray(r[11]) ? r[11] : null,
     })),
   };
 }
@@ -425,6 +450,7 @@ function workoutCard(w, opts = {}) {
   if (w.distance) meta.append(el('span', null, fmtDistance(w.sport, w.distance)));
   if (w.zone) meta.append(el('span', `zone ${w.zone}`, w.zone));
   if (meta.childNodes.length) c.append(meta);
+  if (w.steps) c.append(stepsChart(w.steps, w.sport, opts.template ? null : athlete().zones, { height: 18 }));
   if (!opts.template) {
     const tg = targetsFor(w);
     if (tg.length) c.append(el('div', 'wk-target', `Alvo: ${tg.join(' · ')}`));
@@ -669,6 +695,7 @@ function setSport(k) {
   $('#fDistUnit').textContent = SPORTS[k].unit;
   $('#fDistance').step = SPORTS[k].step;
   updateTargetLine();
+  if (editSteps) updateStepsPreview();
 }
 
 function updateTargetLine() {
@@ -729,6 +756,7 @@ function openWorkout(id, date, prefill) {
   editingId = w ? w.id : null;
   $('#wDialogTitle').textContent = readOnly ? 'Treino' : (w ? 'Editar treino' : prefill ? 'Usar modelo da biblioteca' : 'Novo treino');
   fillForm(w || prefill, w ? w.date : date);
+  loadStepsIntoForm((w || prefill || {}).steps || null);
   fillResult(w ? w.result : null);
   $('#resultBox').hidden = !w || document.body.classList.contains('legacy');
   $('#wDateLabel').hidden = false;
@@ -749,6 +777,7 @@ function openTemplate(id) {
   $('#wDialogTitle').textContent = t ? 'Editar modelo da biblioteca' : 'Novo modelo da biblioteca';
   fillForm(t, '');
   if (!t && libFilter !== 'all') setSport(libFilter);
+  loadStepsIntoForm(t ? t.steps : null);
   $('#resultBox').hidden = true;
   $('#wDateLabel').hidden = true;
   $('#wFields').disabled = false;
@@ -791,6 +820,7 @@ function readForm() {
     zone: $('#wZone').value,
     desc: $('#wDesc').value.trim(),
     notes: $('#wNotes').value.trim(),
+    steps: readStepsFromForm(),
   };
 }
 
@@ -848,7 +878,7 @@ function setExportRange(preset) {
 function exportCard(w, withDesc) {
   const c = el('div', 'ex-card');
   c.style.setProperty('--sport', SPORTS[w.sport].color);
-  c.style.borderLeftColor = SPORTS[w.sport].color;
+  if (w.result && w.result.done) c.classList.add('done');
   const t = el('div', 't');
   t.append(icon(w.sport), el('span', null, w.title || SPORTS[w.sport].label));
   c.append(t);
@@ -858,6 +888,7 @@ function exportCard(w, withDesc) {
   if (w.distance) m.append(el('span', null, fmtDistance(w.sport, w.distance)));
   if (w.zone) m.append(el('span', `zone ${w.zone}`, ZONES.find(z => z[0] === w.zone)[1]));
   if (m.childNodes.length) c.append(m);
+  if (w.steps) { const ch = stepsChart(w.steps, w.sport, athlete().zones, { height: 26 }); ch.classList.add('ex-chart'); c.append(ch); }
   const tg = targetsFor(w);
   if (tg.length) c.append(el('div', 'tg', `Alvo: ${tg.join(' · ')}`));
   if (withDesc && w.desc) c.append(el('div', 's', w.desc));
@@ -1263,6 +1294,15 @@ function bindEvents() {
     renderCalendar();
     toast('Zonas salvas');
   };
+  $$('#stepsMode [data-mode]').forEach(b => (b.onclick = async () => {
+    const mode = b.dataset.mode;
+    if (mode === $('#stepsMode').dataset.mode) return;
+    if (mode === 'blocks' && $('#wDesc').value.trim()) {
+      const ok = await ask({ title: 'Montar em blocos?', text: 'O texto da estrutura será trocado pelo texto gerado a partir dos blocos.', ok: 'Usar blocos' });
+      if (!ok) return;
+    }
+    setStepsMode(mode);
+  }));
   $('#btnStructure').onclick = () => {
     const t = $('#wDesc');
     const tpl = 'Aquecimento: \nPrincipal: \nDesaquecimento: ';

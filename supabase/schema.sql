@@ -38,6 +38,9 @@ create table if not exists public.workouts (
   updated_at  timestamptz not null default now()
 );
 create index if not exists workouts_athlete_date on public.workouts (athlete_id, date);
+-- treino em blocos (aquecimento, repetições, desaquecimento...)
+alter table public.workouts add column if not exists steps jsonb
+  check (steps is null or (jsonb_typeof(steps) = 'array' and pg_column_size(steps) < 20000));
 
 create table if not exists public.results (
   workout_id text primary key references public.workouts(id) on delete cascade,

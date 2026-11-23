@@ -12,16 +12,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- ?v= força o navegador a baixar a versão nova depois de cada publicação -->
-  <link rel="stylesheet" href="css/style.css?v=7">
+  <link rel="stylesheet" href="css/style.css?v=8">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
           integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"
           integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK"
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-  <script src="js/config.js?v=7" defer></script>
-  <script src="js/app.js?v=7" defer></script>
-  <script src="js/cloud.js?v=7" defer></script>
+  <script src="js/config.js?v=8" defer></script>
+  <script src="js/steps.js?v=8" defer></script>
+  <script src="js/app.js?v=8" defer></script>
+  <script src="js/cloud.js?v=8" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -148,11 +149,24 @@
         </div>
         <p class="target-line" id="wTarget" hidden></p>
 
-        <label>Estrutura do treino
-          <textarea id="wDesc" rows="6" placeholder="Aquecimento: 10 min leve&#10;Principal: 6 x 400 m forte / 200 m trote&#10;Desaquecimento: 10 min leve"></textarea>
-        </label>
-        <div class="desc-tools edit-only">
-          <button type="button" class="chip" id="btnStructure">Inserir estrutura (aquec. / principal / desaquec.)</button>
+        <div class="steps-block">
+          <div class="steps-head">
+            <span class="steps-title">Estrutura do treino</span>
+            <span id="stepsModeBar">
+              <span id="stepsMode" class="seg" data-mode="text">
+                <button type="button" data-mode="text" aria-pressed="true">Texto livre</button>
+                <button type="button" data-mode="blocks" aria-pressed="false">Blocos</button>
+              </span>
+            </span>
+          </div>
+          <div id="stepsChart" class="steps-chart-box" hidden></div>
+          <p id="stepsTotal" class="steps-total" hidden></p>
+          <div id="stepsEditor" class="steps-editor" hidden></div>
+          <p id="stepsAuto" class="muted small" hidden>Duração, distância e texto saem dos blocos. O que não foi informado (o tempo de um tiro em metros, por exemplo) é estimado pelas zonas da atleta.</p>
+          <textarea id="wDesc" aria-label="Estrutura do treino" rows="6" placeholder="Aquecimento: 10 min leve&#10;Principal: 6 x 400 m forte / 200 m trote&#10;Desaquecimento: 10 min leve"></textarea>
+          <div class="desc-tools edit-only">
+            <button type="button" class="chip" id="btnStructure">Inserir estrutura (aquec. / principal / desaquec.)</button>
+          </div>
         </div>
 
         <label>Observações
