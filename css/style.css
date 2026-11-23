@@ -248,7 +248,7 @@ fieldset:disabled .sport-pick button[aria-pressed="false"] { display: none; }
   .topbar { padding: 10px 16px; gap: 10px; }
   .brand-name { display: none; }
   .top-actions { margin-left: auto; }
-  #btnShare { display: none; }
+  .top-actions .btn { padding: 6px 9px; font-size: 12px; }
   .monthbar, .calendar { padding-left: 16px; padding-right: 16px; }
   .hint { padding: 0 16px 24px; }
   .month-nav h1 { font-size: 17px; }
