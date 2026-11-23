@@ -6,6 +6,6 @@
 // regras do banco em supabase/schema.sql. NUNCA coloque aqui a chave "service_role"/"secret".
 // Deixando vazio, o site funciona como antes (dados só no navegador).
 window.CLOUD_CONFIG = {
-  url: '',
-  anonKey: '',
+  url: 'https://bnoxumbxddrckmafmyjn.supabase.co',
+  anonKey: 'sb_publishable_bViITrWgGcYCCYAzpf-G6A_fzxtSMRN',
 };
