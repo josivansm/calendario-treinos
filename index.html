@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Calendário de Treinos</title>
   <meta name="description" content="Calendário de treinos de corrida, ciclismo e natação.">
+  <!-- Segurança: só carrega scripts deste site e do cdnjs; sem plugins; não envia referer -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' data: blob:; object-src 'none'; base-uri 'self'">
+  <meta name="referrer" content="no-referrer">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-  <script src="js/app.js" defer></script>
+  <!-- ?v= força o navegador a baixar a versão nova depois de cada publicação -->
+  <link rel="stylesheet" href="css/style.css?v=5">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+          integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
+          crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+  <script src="js/app.js?v=5" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -50,6 +56,7 @@
 
   <div id="readonlyBanner" class="banner" hidden>
     <span>Plano de treino de <strong id="roName"></strong> · somente visualização</span>
+    <span id="legacyNote" class="legacy-note" hidden>Este link é de uma versão antiga: peça um link novo para poder marcar os treinos feitos.</span>
     <span class="banner-actions">
       <button type="button" class="btn small ghost" id="btnRoZones">Minhas zonas</button>
       <button type="button" class="btn small primary" id="btnSendFeedback">Enviar retorno ao treinador</button>
@@ -260,6 +267,20 @@
       <span class="spacer"></span>
       <button type="button" class="btn ghost" data-close>Agora não</button>
       <button type="button" class="btn primary" id="btnFbApply">Aplicar retorno</button>
+    </div>
+  </dialog>
+
+  <!-- Confirmação / texto (substitui confirm e prompt do navegador) -->
+  <dialog id="askDialog" class="dialog ask">
+    <div class="dlg-head"><h2 id="askTitle"></h2></div>
+    <div class="ask-body">
+      <p id="askText" class="muted"></p>
+      <input type="text" id="askInput" maxlength="60" aria-label="Nome">
+    </div>
+    <div class="dlg-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" id="askCancel">Cancelar</button>
+      <button type="button" class="btn primary" id="askOk">Confirmar</button>
     </div>
   </dialog>
 

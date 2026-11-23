@@ -94,6 +94,44 @@ function toast(msg) {
   toast._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+/* ================= Caixa de confirmação / texto =================
+   Substitui confirm() e prompt(): alguns navegadores (painéis embutidos, navegador interno
+   do WhatsApp/Instagram) bloqueiam essas janelas e o confirm() devolve "false" sem mostrar nada. */
+function ask({ title, text = '', ok = 'Confirmar', danger = false, input = null }) {
+  return new Promise(resolve => {
+    const d = $('#askDialog'), inp = $('#askInput'), okBtn = $('#askOk');
+    $('#askTitle').textContent = title;
+    $('#askText').textContent = text;
+    $('#askText').hidden = !text;
+    inp.hidden = input === null;
+    inp.value = input === null ? '' : input;
+    okBtn.textContent = ok;
+    okBtn.className = 'btn ' + (danger ? 'danger' : 'primary');
+    // Responde direto no clique (não depende do evento "close", que alguns navegadores não disparam)
+    let settled = false;
+    const finish = v => {
+      if (settled) return;
+      settled = true;
+      if (d.open) d.close();
+      resolve(v);
+    };
+    okBtn.onclick = () => {
+      if (input === null) return finish(true);
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); return; }
+      finish(v);
+    };
+    $('#askCancel').onclick = () => finish(null);
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); okBtn.click(); } };
+    d.oncancel = () => finish(null);                       // tecla Esc
+    d.onclick = e => { if (e.target === d) finish(null); }; // clique fora
+    d.onclose = () => finish(null);                         // qualquer outro fechamento
+    d.showModal();
+    (input === null ? okBtn : inp).focus();
+    if (input !== null) inp.select();
+  });
+}
+
 /* ================= Dados ================= */
 let db;
 let readOnly = false;
@@ -232,7 +270,10 @@ const targetsFor = w => zoneTargets(athlete().zones, w.sport, w.zone);
 /* ================= Retorno da atleta (fica no navegador dela) ================= */
 const FEEDBACK_KEY = 'calendario-treinos:retorno';
 function loadFeedback() {
-  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY)) || {}; } catch (e) { return {}; }
+  try {
+    const m = JSON.parse(localStorage.getItem(FEEDBACK_KEY));
+    return m && typeof m === "object" && !Array.isArray(m) ? m : {};
+  } catch (e) { return {}; }
 }
 function saveFeedback(map) {
   try { localStorage.setItem(FEEDBACK_KEY, JSON.stringify(map)); return true; }
@@ -259,6 +300,8 @@ function unb64url(str) {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+// ids vindos de link: só letras/números (evita chaves especiais como __proto__)
+const safeId = v => (typeof v === "string" || typeof v === "number") && /^[A-Za-z0-9_-]{1,40}$/.test(String(v)) && !/^_/.test(String(v)) ? String(v) : "";
 const packResult = r => (r ? [r.done ? 1 : 0, r.duration, r.distance, r.rpe, r.comment] : 0);
 const unpackResult = r => (Array.isArray(r) ? { done: !!r[0], duration: r[1], distance: r[2], rpe: r[3], comment: r[4] } : null);
 
@@ -270,13 +313,33 @@ async function packJSON(obj) {
   }
   return "j" + b64url(bytes);
 }
+const MAX_LINK_CHARS = 200000;      // ~150 KB comprimidos
+const MAX_JSON_BYTES = 2 * 1024 * 1024; // 2 MB descomprimidos
 async function unpackJSON(str) {
+  if (!str || str.length > MAX_LINK_CHARS) throw new Error("link grande demais");
   const kind = str[0], bytes = unb64url(str.slice(1));
+  let raw;
   if (kind === "z") {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-    return JSON.parse(await new Response(stream).text());
-  }
-  return JSON.parse(new TextDecoder().decode(bytes));
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+    const chunks = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > MAX_JSON_BYTES) { reader.cancel(); throw new Error("conteúdo grande demais"); }
+      chunks.push(value);
+    }
+    raw = new Uint8Array(total);
+    let off = 0;
+    chunks.forEach(c => { raw.set(c, off); off += c.length; });
+  } else if (kind === "j") {
+    raw = bytes;
+  } else throw new Error("formato desconhecido");
+  if (raw.length > MAX_JSON_BYTES) throw new Error("conteúdo grande demais");
+  const obj = JSON.parse(new TextDecoder().decode(raw));
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("formato");
+  return obj;
 }
 
 // Link da atleta: plano completo (com ids, para o retorno voltar ao treino certo)
@@ -289,13 +352,15 @@ function encodePlan(a) {
 }
 async function decodePlan(str) {
   const c = await unpackJSON(str);
+  const rows = (Array.isArray(c.w) ? c.w : []).filter(Array.isArray).slice(0, 5000);
   return {
     id: "compartilhado",
-    name: String(c.n || "Atleta"),
+    name: String(c.n || "Atleta").slice(0, 60),
     zones: sanitizeZones(c.z),
-    workouts: (c.w || []).map(r => sanitizeWorkout({
+    legacy: rows.some(r => !safeId(r[9])),
+    workouts: rows.map(r => sanitizeWorkout({
       date: r[0], sport: r[1], title: r[2], duration: r[3], distance: r[4], zone: r[5], desc: r[6], notes: r[7], order: r[8],
-      id: r[9] ? String(r[9]) : undefined, result: unpackResult(r[10]),
+      id: safeId(r[9]) || undefined, result: unpackResult(r[10]),
     })),
   };
 }
@@ -310,8 +375,13 @@ function encodeFeedback(name, workouts) {
 async function decodeFeedback(str) {
   const c = await unpackJSON(str);
   return {
-    name: String(c.n || "Atleta"),
-    items: (c.f || []).map(r => ({ id: String(r[0]), date: String(r[1]), title: String(r[2] || ""), result: sanitizeResult(unpackResult(r[3])) })),
+    name: String(c.n || "Atleta").slice(0, 60),
+    items: (Array.isArray(c.f) ? c.f : []).filter(Array.isArray).slice(0, 5000).map(r => ({
+      id: safeId(r[0]),
+      date: /^\d{4}-\d{2}-\d{2}$/.test(r[1]) ? r[1] : iso(new Date()),
+      title: String(r[2] || "").slice(0, 80),
+      result: sanitizeResult(unpackResult(r[3])),
+    })),
   };
 }
 
@@ -658,7 +728,7 @@ function openWorkout(id, date, prefill) {
   $('#wDialogTitle').textContent = readOnly ? 'Treino' : (w ? 'Editar treino' : prefill ? 'Usar modelo da biblioteca' : 'Novo treino');
   fillForm(w || prefill, w ? w.date : date);
   fillResult(w ? w.result : null);
-  $('#resultBox').hidden = !w;
+  $('#resultBox').hidden = !w || document.body.classList.contains('legacy');
   $('#wDateLabel').hidden = false;
   $('#wFields').disabled = readOnly;
   $('#btnDelete').hidden = !w;
@@ -863,6 +933,8 @@ function openLinkDialog(title, text, url, whatsText) {
 let pendingFeedback = null;
 function showIncomingFeedback(fb) {
   pendingFeedback = fb;
+  // tira o retorno do endereço para não reabrir ao recarregar a página
+  history.replaceState(null, '', location.pathname);
   $('#fbName').textContent = fb.name;
   $('#fbCount').textContent = `${fb.items.length} treino${fb.items.length > 1 ? 's' : ''}`;
   const sel = $('#fbAthlete');
@@ -1011,6 +1083,8 @@ async function generateImage() {
     img.alt = 'Prévia da imagem exportada';
     img.src = URL.createObjectURL(lastBlob);
     const pv = $('#exPreview');
+    const old = $('img', pv);
+    if (old) URL.revokeObjectURL(old.src);
     pv.innerHTML = '';
     pv.append(img);
     $('#btnDownload').disabled = false;
@@ -1041,14 +1115,27 @@ function exportBackup() {
 }
 function importBackup(file) {
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
+    let d;
     try {
-      const d = JSON.parse(r.result);
+      d = JSON.parse(r.result);
       if (!d || !Array.isArray(d.athletes) || !d.athletes.length) throw new Error('formato');
-      if (!confirm('Importar este backup vai substituir todos os dados atuais. Continuar?')) return;
+    } catch (e) { toast('Arquivo inválido'); return; }
+    const okImport = await ask({
+      title: 'Importar backup?',
+      text: 'Isso substitui todos os atletas, treinos e a biblioteca atuais pelos do arquivo.',
+      ok: 'Importar e substituir', danger: true,
+    });
+    if (!okImport) return;
+    try {
       db = {
-        athletes: d.athletes.map(a => ({ id: a.id || uid(), name: String(a.name || 'Atleta'), workouts: (a.workouts || []).map(sanitizeWorkout) })),
-        currentId: d.currentId,
+        athletes: d.athletes.map(a => ({
+          id: String(a.id || uid()),
+          name: String(a.name || 'Atleta').slice(0, 60),
+          zones: sanitizeZones(a.zones),
+          workouts: (Array.isArray(a.workouts) ? a.workouts : []).map(sanitizeWorkout),
+        })),
+        currentId: String(d.currentId || ''),
         library: Array.isArray(d.library) ? d.library.map(t => sanitizeTemplate({ ...t, id: t.id || uid() })) : db.library,
         libraryOpen: db.libraryOpen,
       };
@@ -1067,7 +1154,7 @@ function bindEvents() {
 
   $('#athleteSelect').onchange = e => { db.currentId = e.target.value; saveDB(); render(); };
 
-  document.addEventListener('click', e => {
+  document.addEventListener('click', async e => {
     $$('details.dropdown[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
     const act = e.target.closest('[data-act]');
     if (!act) return;
@@ -1075,21 +1162,25 @@ function bindEvents() {
     const a = athlete();
     switch (act.dataset.act) {
       case 'athlete-new': {
-        const name = (prompt('Nome da atleta:') || '').trim();
+        const name = await ask({ title: 'Nova atleta', input: '', ok: 'Criar' });
         if (!name) return;
-        const n = newAthlete(name);
+        const n = newAthlete(name.slice(0, 60));
         db.athletes.push(n); db.currentId = n.id; saveDB(); render();
         break;
       }
       case 'athlete-rename': {
-        const name = (prompt('Novo nome:', a.name) || '').trim();
+        const name = await ask({ title: 'Renomear atleta', input: a.name, ok: 'Salvar' });
         if (!name) return;
-        a.name = name; saveDB(); render();
+        a.name = name.slice(0, 60); saveDB(); render();
         break;
       }
       case 'athlete-delete':
         if (db.athletes.length === 1) { toast('É preciso ter pelo menos uma atleta'); return; }
-        if (!confirm(`Excluir "${a.name}" e todos os ${a.workouts.length} treinos? Isso não pode ser desfeito.`)) return;
+        if (!(await ask({
+          title: `Excluir ${a.name}?`,
+          text: `Os ${a.workouts.length} treinos e as zonas dessa atleta serão apagados. Isso não pode ser desfeito (a não ser por um backup).`,
+          ok: 'Excluir atleta', danger: true,
+        }))) return;
         db.athletes = db.athletes.filter(x => x.id !== a.id);
         db.currentId = db.athletes[0].id; saveDB(); render();
         break;
@@ -1135,7 +1226,6 @@ function bindEvents() {
   $('#btnSendFeedback').onclick = sendFeedback;
   $('#btnRoZones').onclick = openZones;
   $('#btnFbApply').onclick = applyFeedback;
-  $('#feedbackDialog').addEventListener('close', () => { if (location.hash.startsWith(FEEDBACK_PREFIX)) history.replaceState(null, '', location.pathname); });
 
   // Zonas
   ['#zRun', '#zFtp', '#zCss', '#zHr'].forEach(id => $(id).addEventListener('input', renderZonesTable));
@@ -1153,16 +1243,25 @@ function bindEvents() {
     t.focus();
     t.setSelectionRange(13 + (t.value.length - tpl.length), 13 + (t.value.length - tpl.length));
   };
-  $('#btnDelete').onclick = () => {
+  $('#btnDelete').onclick = async () => {
     if (dialogMode === 'template') {
       const t = db.library.find(x => x.id === editingId);
-      if (!t || !confirm(`Excluir o modelo "${t.title}" da biblioteca? Os treinos já colocados no calendário não mudam.`)) return;
+      if (!t || !(await ask({
+        title: `Excluir o modelo "${t.title}"?`,
+        text: 'Ele sai da biblioteca. Os treinos já colocados no calendário não mudam.',
+        ok: 'Excluir modelo', danger: true,
+      }))) return;
       db.library = db.library.filter(x => x.id !== editingId);
       saveDB(); $('#workoutDialog').close(); renderLibrary();
       toast('Modelo excluído');
       return;
     }
-    if (!editingId || !confirm('Excluir este treino?')) return;
+    const w = athlete().workouts.find(x => x.id === editingId);
+    if (!w || !(await ask({
+      title: 'Excluir este treino?',
+      text: `${w.title || SPORTS[w.sport].label} · ${fmtDM(parseISO(w.date))}`,
+      ok: 'Excluir treino', danger: true,
+    }))) return;
     athlete().workouts = athlete().workouts.filter(w => w.id !== editingId);
     saveDB(); $('#workoutDialog').close(); renderCalendar();
     toast('Treino excluído');
@@ -1239,10 +1338,14 @@ async function init() {
     try {
       const shared = await decodePlan(location.hash.slice(SHARE_PREFIX.length));
       const fb = loadFeedback();
-      shared.workouts.forEach(w => { if (fb[w.id]) w.result = sanitizeResult(fb[w.id]); });
+      if (!shared.legacy) shared.workouts.forEach(w => { if (Object.prototype.hasOwnProperty.call(fb, w.id)) w.result = sanitizeResult(fb[w.id]); });
       db = { athletes: [shared], currentId: shared.id };
       readOnly = true;
       document.body.classList.add('readonly');
+      if (shared.legacy) {
+        document.body.classList.add('legacy');
+        $('#legacyNote').hidden = false;
+      }
       $('#readonlyBanner').hidden = false;
     } catch (e) {
       console.error(e);

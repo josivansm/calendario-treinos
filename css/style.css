@@ -399,3 +399,13 @@ body:not(.readonly) .ro-only { display: none !important; }
   .wk-target { display: block; }
   .banner-actions { margin-left: 0; }
 }
+
+/* ---------- Caixa de confirmação ---------- */
+.dialog.ask { width: min(420px, calc(100vw - 24px)); }
+.ask-body { padding: 14px 18px; display: flex; flex-direction: column; gap: 10px; }
+.ask-body p { margin: 0; }
+.ask-body input { font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 6px; padding: 9px 11px; }
+.btn.danger { background: var(--danger); color: #fff; }
+.btn.danger:hover { filter: brightness(1.08); }
+.legacy-note { flex-basis: 100%; font-size: 12.5px; }
+body.legacy #btnSendFeedback { display: none; }
