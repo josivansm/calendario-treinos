@@ -409,3 +409,10 @@ body:not(.readonly) .ro-only { display: none !important; }
 .btn.danger:hover { filter: brightness(1.08); }
 .legacy-note { flex-basis: 100%; font-size: 12.5px; }
 body.legacy #btnSendFeedback { display: none; }
+
+/* ---------- Formulário de treino: uma única área com rolagem ---------- */
+.dialog > form { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: hidden; }
+.dlg-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.dlg-body > fieldset { overflow: visible; min-width: 0; }
+.dlg-head, .dlg-foot { flex: none; }
+.dialog label .lbl { display: block; }

@@ -12,11 +12,11 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- ?v= força o navegador a baixar a versão nova depois de cada publicação -->
-  <link rel="stylesheet" href="css/style.css?v=5">
+  <link rel="stylesheet" href="css/style.css?v=6">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
           integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-  <script src="js/app.js?v=5" defer></script>
+  <script src="js/app.js?v=6" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -104,6 +104,7 @@
         <h2 id="wDialogTitle">Novo treino</h2>
         <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
       </div>
+      <div class="dlg-body">
       <fieldset id="wFields">
         <div class="sport-pick" id="sportPick"></div>
 
@@ -114,7 +115,7 @@
           <label>Duração
             <input type="text" id="wDuration" placeholder="ex: 1:30 ou 45" inputmode="numeric">
           </label>
-          <label>Distância <span id="wDistUnit" class="unit">km</span>
+          <label><span class="lbl">Distância <span id="wDistUnit" class="unit">km</span></span>
             <input type="number" id="wDistance" min="0" step="0.1" placeholder="0">
           </label>
         </div>
@@ -147,7 +148,7 @@
           <label>Tempo realizado
             <input type="text" id="fDuration" placeholder="ex: 1:25" inputmode="numeric">
           </label>
-          <label>Distância realizada <span id="fDistUnit" class="unit">km</span>
+          <label><span class="lbl">Distância realizada <span id="fDistUnit" class="unit">km</span></span>
             <input type="number" id="fDistance" min="0" step="0.1" placeholder="0">
           </label>
           <label>Esforço percebido
@@ -158,6 +159,7 @@
           <textarea id="fComment" rows="2" placeholder="Como se sentiu, dores, clima, o que mudou..."></textarea>
         </label>
       </fieldset>
+      </div>
       <div class="dlg-foot">
         <button type="button" class="btn danger-ghost edit-only" id="btnDelete">Excluir</button>
         <button type="button" class="btn ghost edit-only" id="btnDuplicate">Duplicar</button>
@@ -227,16 +229,16 @@
     <fieldset id="zFields">
       <p class="muted edit-only">Preencha o que souber; as faixas de cada zona são calculadas na hora e aparecem nos treinos, no link da atleta e na imagem exportada.</p>
       <div class="row">
-        <label>Corrida · pace de limiar <span class="unit">(min/km)</span>
+        <label><span class="lbl">Corrida · pace de limiar <span class="unit">(min/km)</span></span>
           <input type="text" id="zRun" placeholder="ex: 5:00">
         </label>
-        <label>Ciclismo · FTP <span class="unit">(watts)</span>
+        <label><span class="lbl">Ciclismo · FTP <span class="unit">(watts)</span></span>
           <input type="number" id="zFtp" min="50" max="600" placeholder="ex: 180">
         </label>
-        <label>Natação · CSS <span class="unit">(min/100 m)</span>
+        <label><span class="lbl">Natação · CSS <span class="unit">(min/100 m)</span></span>
           <input type="text" id="zCss" placeholder="ex: 2:00">
         </label>
-        <label>FC máxima <span class="unit">(bpm)</span>
+        <label><span class="lbl">FC máxima <span class="unit">(bpm)</span></span>
           <input type="number" id="zHr" min="120" max="230" placeholder="ex: 185">
         </label>
       </div>
