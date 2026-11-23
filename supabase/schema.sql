@@ -163,6 +163,7 @@ begin
     update athletes a
        set athlete_user_id = auth.uid(), invite_code = null
      where a.invite_code = lower(code) and a.athlete_user_id is null
+       and a.owner_id <> auth.uid()   -- o treinador não usa o convite da própria atleta
      returning a.id, a.name;
 end $$;
 
