@@ -23,6 +23,10 @@ create table if not exists public.athletes (
   updated_at      timestamptz not null default now()
 );
 
+-- provas e fases do plano (a atleta só lê)
+alter table public.athletes add column if not exists plan jsonb not null default '{}'::jsonb
+  check (jsonb_typeof(plan) = 'object' and pg_column_size(plan) < 50000);
+
 create table if not exists public.workouts (
   id          text primary key check (id ~ '^[A-Za-z0-9-]{1,40}$'),
   athlete_id  text not null references public.athletes(id) on delete cascade,
@@ -146,8 +150,8 @@ revoke all on public.athletes, public.workouts, public.results, public.libraries
 -- owner_id vem sempre do login e athlete_user_id só muda pelo convite (claim_invite).
 revoke insert, update on public.athletes from authenticated;
 grant select, delete on public.athletes to authenticated;
-grant insert (id, name, zones, invite_code, sort) on public.athletes to authenticated;
-grant update (name, zones, invite_code, sort) on public.athletes to authenticated;
+grant insert (id, name, zones, invite_code, sort, plan) on public.athletes to authenticated;
+grant update (name, zones, invite_code, sort, plan) on public.athletes to authenticated;
 grant select, insert, update, delete on public.workouts, public.libraries to authenticated;
 -- results: updated_by é sempre preenchido pelo banco (gatilho), não pelo app
 revoke insert, update on public.results from authenticated;

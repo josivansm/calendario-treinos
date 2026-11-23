@@ -374,6 +374,7 @@ function encodePlan(a) {
   return packJSON({
     n: a.name,
     z: a.zones || null,
+    p: a.plan || null,
     w: a.workouts.map(w => [w.date, w.sport, w.title, w.duration, w.distance, w.zone, w.desc, w.notes, w.order, w.id, packResult(w.result), w.steps || 0]),
   });
 }
@@ -384,6 +385,7 @@ async function decodePlan(str) {
     id: "compartilhado",
     name: String(c.n || "Atleta").slice(0, 60),
     zones: sanitizeZones(c.z),
+    plan: sanitizePlan(c.p),
     legacy: rows.some(r => !safeId(r[9])),
     workouts: rows.map(r => sanitizeWorkout({
       date: r[0], sport: r[1], title: r[2], duration: r[3], distance: r[4], zone: r[5], desc: r[6], notes: r[7], order: r[8],
@@ -503,7 +505,16 @@ function sportSummaryText(sport, s) {
 function weekSummary(weekStart, list) {
   const box = el('div', 'cal-sum');
   const t = totals(list);
-  box.append(el('div', 'sum-title', 'Semana'));
+  const phase = phaseForWeek(athlete(), weekStart);
+  const head = el('div', 'sum-head');
+  head.append(el('div', 'sum-title', 'Semana'));
+  if (phase) {
+    const chip = el('span', 'phase-chip', phaseWeekLabel(phase, weekStart));
+    chip.style.background = PHASES[phase.kind].color;
+    chip.style.color = PHASES[phase.kind].ink;
+    head.append(chip);
+  }
+  box.append(head);
   if (!t.count) box.append(el('div', 'sum-empty', 'Sem treinos'));
   else {
     box.append(el('div', 'sum-total', fmtDuration(t.duration) || `${t.count} treinos`));
@@ -514,6 +525,8 @@ function weekSummary(weekStart, list) {
       r.append(icon(k), el('span', null, SPORTS[k].label), el('span', null, sportSummaryText(k, s)));
       box.append(r);
     });
+    const tss = weekTSS(list, athlete().zones);
+    if (tss) box.append(el('div', 'sum-load', `Carga ~${tss} TSS`));
     const done = list.filter(w => w.result && w.result.done);
     if (done.length) {
       const doneMin = done.reduce((s, w) => s + (w.result.duration || w.duration), 0);
@@ -566,6 +579,8 @@ function renderCalendar() {
 
   for (let ws = startOfWeek(first); ws <= last; ws = addDays(ws, 7)) {
     const week = el('div', 'cal-week');
+    const wPhase = phaseForWeek(athlete(), ws);
+    if (wPhase) { week.classList.add('has-phase'); week.style.setProperty('--phase', PHASES[wPhase.kind].ink); }
     const weekList = [];
     for (let i = 0; i < 7; i++) {
       const day = addDays(ws, i), key = iso(day);
@@ -575,7 +590,8 @@ function renderCalendar() {
       cell.dataset.date = key;
       if (day.getMonth() !== viewDate.getMonth()) cell.classList.add('other-month');
       if (key === todayKey) cell.classList.add('today');
-      if (!items.length) cell.classList.add('empty');
+      const evs = eventsOn(athlete(), key);
+      if (!items.length && !evs.length) cell.classList.add('empty');
 
       const top = el('div', 'day-top');
       top.append(el('span', 'day-wd', WD[i]));
@@ -588,6 +604,7 @@ function renderCalendar() {
         top.append(add);
       }
       cell.append(top);
+      evs.forEach(ev => cell.append(eventCard(ev)));
       items.forEach(w => cell.append(workoutCard(w)));
 
       if (!readOnly) {
@@ -615,7 +632,7 @@ function renderCalendar() {
   }
 }
 
-function render() { renderHeader(); renderCalendar(); renderLibrary(); }
+function render() { renderHeader(); renderCountdown(); renderCalendar(); renderLibrary(); }
 
 /* ================= Biblioteca ================= */
 let libFilter = 'all';
@@ -1020,6 +1037,18 @@ function applyFeedback() {
   toast(missing ? `${applied} treino(s) atualizados · ${missing} não encontrados (foram excluídos ou são de outro plano)` : `Retorno aplicado em ${applied} treino(s)`);
 }
 
+function exportEvent(ev) {
+  const c = el('div', `ex-event ev-${ev.priority}`);
+  c.append(el('b', null, `🏁 ${ev.name}`), el('span', null, [`Prova ${ev.priority}`, EVENT_SPORTS[ev.sport], ev.distance].filter(Boolean).join(' · ')));
+  return c;
+}
+function exportPhaseChip(f, ws) {
+  const chip = el('span', 'ex-phase', phaseWeekLabel(f, ws));
+  chip.style.background = PHASES[f.kind].color;
+  chip.style.color = PHASES[f.kind].ink;
+  return chip;
+}
+
 function exportSummaryLine(list) {
   const t = totals(list);
   if (!t.count) return 'Sem treinos';
@@ -1059,12 +1088,15 @@ function buildExport(from, to, layout, withDesc) {
         const inRange = day >= from && day <= to;
         const cell = el('div', 'ex-day' + (inRange ? '' : ' out'));
         cell.append(el('div', 'd', day.getDate() === 1 || i === 0 ? fmtDM(day) : String(day.getDate())));
+        if (inRange) eventsOn(a, key).forEach(ev => cell.append(exportEvent(ev)));
         if (inRange) (byDate[key] || []).forEach(w => { weekList.push(w); cell.append(exportCard(w, withDesc)); });
         row.append(cell);
       }
       const sum = el('div', 'ex-sum');
       const t = totals(weekList);
       sum.append(el('div', 'sum-title', 'Semana'));
+      const gp = phaseForWeek(a, ws);
+      if (gp) sum.append(exportPhaseChip(gp, ws));
       if (t.count) {
         sum.append(el('div', 'tot', fmtDuration(t.duration) || `${t.count} treinos`));
         SPORT_KEYS.forEach(k => {
@@ -1083,7 +1115,10 @@ function buildExport(from, to, layout, withDesc) {
       for (let i = 0; i < 7; i++) { const d = addDays(ws, i); if (d >= from && d <= to) days.push(d); }
       const weekList = days.flatMap(d => byDate[iso(d)] || []);
       const title = el('div', 'ex-wk-title');
-      title.append(el('span', null, `Semana ${fmtDM(days[0])} – ${fmtDM(days[days.length - 1])}`), el('span', null, exportSummaryLine(weekList)));
+      const lp = phaseForWeek(a, ws);
+      const tl = el('span', null, `Semana ${fmtDM(days[0])} – ${fmtDM(days[days.length - 1])}`);
+      if (lp) tl.append(' ', exportPhaseChip(lp, ws));
+      title.append(tl, el('span', null, exportSummaryLine(weekList)));
       root.append(title);
       days.forEach(d => {
         const row = el('div', 'ex-row');
@@ -1091,8 +1126,9 @@ function buildExport(from, to, layout, withDesc) {
         date.append(el('div', 'wd', WD_LONG[wdIndex(d)]), el('div', 'dm', fmtDM(d)));
         const cards = el('div', 'cards');
         const items = byDate[iso(d)] || [];
+        eventsOn(a, iso(d)).forEach(ev => cards.append(exportEvent(ev)));
         if (items.length) items.forEach(w => cards.append(exportCard(w, withDesc)));
-        else cards.append(el('div', 'rest', 'Descanso'));
+        else if (!eventsOn(a, iso(d)).length) cards.append(el('div', 'rest', 'Descanso'));
         row.append(date, cards);
         root.append(row);
       });
@@ -1178,6 +1214,7 @@ function importBackup(file) {
           id: String(a.id || uid()),
           name: String(a.name || 'Atleta').slice(0, 60),
           zones: sanitizeZones(a.zones),
+          plan: sanitizePlan(a.plan),
           workouts: (Array.isArray(a.workouts) ? a.workouts : []).map(sanitizeWorkout),
         })),
         currentId: String(d.currentId || ''),
@@ -1193,6 +1230,7 @@ function importBackup(file) {
 
 /* ================= Eventos ================= */
 function bindEvents() {
+  bindPlanEvents();
   $('#btnPrev').onclick = () => { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1); render(); };
   $('#btnNext').onclick = () => { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1); render(); };
   $('#btnToday').onclick = () => { viewDate = startOfMonth(new Date()); render(); };

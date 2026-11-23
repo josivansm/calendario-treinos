@@ -12,17 +12,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- ?v= força o navegador a baixar a versão nova depois de cada publicação -->
-  <link rel="stylesheet" href="css/style.css?v=8">
+  <link rel="stylesheet" href="css/style.css?v=9">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
           integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"
           integrity="sha384-TcHRA3zBbn+Lexh5n+Oil4guNPOS3rjNDpGRAN46u/s/mB2IZ50ceC6TYDU2yvgK"
           crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
-  <script src="js/config.js?v=8" defer></script>
-  <script src="js/steps.js?v=8" defer></script>
-  <script src="js/app.js?v=8" defer></script>
-  <script src="js/cloud.js?v=8" defer></script>
+  <script src="js/config.js?v=9" defer></script>
+  <script src="js/steps.js?v=9" defer></script>
+  <script src="js/plan.js?v=9" defer></script>
+  <script src="js/app.js?v=9" defer></script>
+  <script src="js/cloud.js?v=9" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -91,12 +92,22 @@
     </div>
     <div class="monthbar-right">
       <div class="legend" id="legend"></div>
+      <button type="button" class="btn ghost" id="btnEvolution">
+        <svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M5 15l4-5 4 3 6-7"/></svg>
+        Evolução
+      </button>
+      <button type="button" class="btn ghost edit-only" id="btnPlan">
+        <svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/></svg>
+        Provas e fases
+      </button>
       <button type="button" class="btn ghost edit-only" id="btnLibrary" aria-pressed="false">
         <svg class="btn-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 19V5M9 19V5M14 19l-1-14M18.5 19L15 5.5"/></svg>
         Biblioteca
       </button>
     </div>
   </nav>
+
+  <div id="raceCountdown" class="countdown" hidden></div>
 
   <div class="workspace">
     <main id="calendar" class="calendar" aria-live="polite"></main>
@@ -302,6 +313,132 @@
       <span class="spacer"></span>
       <button type="button" class="btn ghost" data-close>Agora não</button>
       <button type="button" class="btn primary" id="btnFbApply">Aplicar retorno</button>
+    </div>
+  </dialog>
+
+  <!-- Provas e fases -->
+  <dialog id="planDialog" class="dialog wide">
+    <div class="dlg-head">
+      <h2>Plano de <span id="planName"></span></h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <div class="plan-body">
+      <div class="seg plan-tabs" id="planTabs">
+        <button type="button" data-tab="events" aria-pressed="true">Provas</button>
+        <button type="button" data-tab="phases" aria-pressed="false">Fases</button>
+        <button type="button" data-tab="generate" aria-pressed="false">Gerar semanas</button>
+      </div>
+
+      <section data-pane="events">
+        <div id="eventList" class="plan-list"></div>
+        <div class="plan-form">
+          <div class="row">
+            <label>Data <input type="date" id="evDate"></label>
+            <label class="grow">Nome da prova <input type="text" id="evName" maxlength="60" placeholder="ex.: Maratona de SP, Ironman 70.3"></label>
+          </div>
+          <div class="row">
+            <label>Modalidade
+              <select id="evSport">
+                <option value="tri">Triathlon</option><option value="run">Corrida</option><option value="bike">Ciclismo</option>
+                <option value="swim">Natação</option><option value="duathlon">Duathlon</option><option value="other">Outra</option>
+              </select>
+            </label>
+            <label>Prioridade
+              <select id="evPriority">
+                <option value="A">A · prova principal</option><option value="B">B · importante</option><option value="C">C · treino / teste</option>
+              </select>
+            </label>
+            <label>Distância <input type="text" id="evDistance" maxlength="40" placeholder="ex.: 21 km, 70.3"></label>
+          </div>
+          <label>Observações <input type="text" id="evNotes" maxlength="300" placeholder="Largada, local, meta de tempo..."></label>
+          <div class="plan-actions">
+            <button type="button" class="btn ghost" id="btnEventCancel" hidden>Cancelar edição</button>
+            <button type="button" class="btn primary" id="btnEventSave">+ Adicionar prova</button>
+          </div>
+        </div>
+      </section>
+
+      <section data-pane="phases" hidden>
+        <div class="suggest">
+          <button type="button" class="btn ghost" id="btnSuggestPhases">Sugerir fases até a próxima prova</button>
+          <span class="muted small" id="suggestHint"></span>
+        </div>
+        <div id="phaseList" class="plan-list"></div>
+        <div class="plan-form">
+          <div class="row">
+            <label>Fase
+              <select id="phKind">
+                <option value="base">Base</option><option value="build">Construção</option><option value="peak">Pico</option>
+                <option value="taper">Polimento</option><option value="recovery">Recuperação</option><option value="transition">Transição</option>
+              </select>
+            </label>
+            <label>Início <input type="date" id="phStart"></label>
+            <label>Fim <input type="date" id="phEnd"></label>
+            <label class="grow">Observação <input type="text" id="phNote" maxlength="60" placeholder="opcional"></label>
+          </div>
+          <div class="plan-actions">
+            <button type="button" class="btn ghost" id="btnPhaseCancel" hidden>Cancelar edição</button>
+            <button type="button" class="btn primary" id="btnPhaseSave">+ Adicionar fase</button>
+          </div>
+        </div>
+      </section>
+
+      <section data-pane="generate" hidden>
+        <p class="muted">Copia os treinos de uma semana-modelo para as próximas semanas, aumentando a carga aos poucos e com semanas de recuperação.</p>
+        <div class="row">
+          <label>Semana-modelo (qualquer dia dela) <input type="date" id="genSource"></label>
+          <label>Começar na semana de <input type="date" id="genStart"></label>
+          <label>Quantas semanas <input type="number" id="genWeeks" min="1" max="16"></label>
+        </div>
+        <div class="row">
+          <label>Aumento por semana (%) <input type="number" id="genPct" min="-30" max="30" step="1"></label>
+          <label>Recuperação a cada (semanas, 0 = nunca) <input type="number" id="genRecEvery" min="0" max="8"></label>
+          <label>Redução na recuperação (%) <input type="number" id="genRecPct" min="0" max="80" step="5"></label>
+        </div>
+        <p class="muted small">Nos treinos em blocos, só os passos contínuos e de esforço aumentam; aquecimento, recuperação e desaquecimento ficam iguais.</p>
+        <div id="genPreview" class="gen-preview"></div>
+        <div class="plan-actions">
+          <button type="button" class="btn primary" id="btnGenerate">Gerar semanas</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
+  <!-- Evolução -->
+  <dialog id="evoDialog" class="dialog wide evo">
+    <div class="dlg-head">
+      <h2>Evolução de <span id="evoName"></span></h2>
+      <button type="button" class="btn ghost icon" data-close title="Fechar">✕</button>
+    </div>
+    <div class="evo-body">
+      <div class="evo-top">
+        <div class="seg" id="evoRange">
+          <button type="button" data-weeks="8" aria-pressed="false">8 sem.</button>
+          <button type="button" data-weeks="12" aria-pressed="true">12 sem.</button>
+          <button type="button" data-weeks="24" aria-pressed="false">24 sem.</button>
+        </div>
+        <span class="muted small">Passado conforme o que foi feito; daqui para frente, projeção pelo planejado.</span>
+      </div>
+      <div class="tiles" id="evoTiles"></div>
+
+      <h3 class="viz-title">Volume semanal (horas)</h3>
+      <div class="viz-legend" id="evoVolLegend"></div>
+      <div class="viz-box" id="evoVolume"></div>
+
+      <h3 class="viz-title">Condicionamento e fadiga</h3>
+      <div class="viz-legend">
+        <span class="viz-leg"><span class="viz-line" style="background:#2563eb"></span>Condicionamento (CTL)</span>
+        <span class="viz-leg"><span class="viz-line" style="background:#db2777"></span>Fadiga (ATL)</span>
+        <span class="viz-leg"><span class="viz-line dashed"></span>Projeção</span>
+      </div>
+      <div class="viz-box" id="evoForm"></div>
+      <p class="muted small">Carga estimada (TSS) pela zona e duração de cada treino; nos treinos feitos com esforço marcado, usa o esforço. Forma = condicionamento − fadiga: positiva é descansada, negativa é cansada.</p>
+
+      <button type="button" class="link" id="evoTableToggle">Ver tabela</button>
+      <table class="evo-table" id="evoTable" hidden>
+        <thead><tr><th>Semana</th><th>Fase</th><th>Planejado</th><th>Feito</th><th>Carga plan.</th><th>Carga feita</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </div>
   </dialog>
 

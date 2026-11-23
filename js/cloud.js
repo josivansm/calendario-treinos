@@ -81,7 +81,7 @@ const resultRow = w => ({
 function snapshot() {
   const s = { athletes: {}, workouts: {}, results: {}, library: JSON.stringify(db.library || []) };
   db.athletes.forEach((a, i) => {
-    s.athletes[a.id] = JSON.stringify({ name: a.name, zones: sanitizeZones(a.zones), sort: i });
+    s.athletes[a.id] = JSON.stringify({ name: a.name, zones: sanitizeZones(a.zones), plan: sanitizePlan(a.plan), sort: i });
     a.workouts.forEach(w => {
       s.workouts[w.id] = JSON.stringify(workoutRow(w, a.id));
       if (w.result) s.results[w.id] = JSON.stringify(resultRow(w));
@@ -105,7 +105,7 @@ async function cloudFetch() {
   const c = Cloud.client;
   const uid = Cloud.user.id;
   const athletes = await fetchAll(() => c.from('athletes')
-    .select('id,name,zones,invite_code,athlete_user_id,owner_id,sort,created_at')
+    .select('id,name,zones,plan,invite_code,athlete_user_id,owner_id,sort,created_at')
     .order('sort').order('created_at'));
   const ids = athletes.map(a => a.id);
   let workouts = [], results = [];
@@ -124,6 +124,7 @@ async function cloudFetch() {
     id: a.id,
     name: a.name,
     zones: sanitizeZones(a.zones),
+    plan: sanitizePlan(a.plan),
     inviteCode: a.invite_code,
     linked: !!a.athlete_user_id,
     workouts: (byAthlete[a.id] || []).map(w => sanitizeWorkout({
@@ -173,7 +174,7 @@ async function cloudPush() {
 
     // ordem: atletas → treinos → resultados → exclusões (de baixo para cima) → biblioteca
     if (newA.length) await ok(c.from('athletes').upsert(newA, { onConflict: 'id', ignoreDuplicates: true }));
-    for (const a of updA) await ok(c.from('athletes').update({ name: a.name, zones: a.zones, sort: a.sort }).eq('id', a.id));
+    for (const a of updA) await ok(c.from('athletes').update({ name: a.name, zones: a.zones, plan: a.plan, sort: a.sort }).eq('id', a.id));
     for (const part of chunks(upW, 500)) await ok(c.from('workouts').upsert(part));
     for (const part of chunks(upR, 500)) await ok(c.from('results').upsert(part));
     for (const part of chunks(delR, 200)) await ok(c.from('results').delete().in('workout_id', part));
